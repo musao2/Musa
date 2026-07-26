@@ -1,11 +1,8 @@
 import { createClient } from '@supabase/supabase-js';
 
-const supabaseUrl  = import.meta.env.VITE_SUPABASE_URL || 'https://placeholder.supabase.co';
-const supabaseKey  = import.meta.env.VITE_SUPABASE_ANON_KEY || 'placeholder';
-
-if (!import.meta.env.VITE_SUPABASE_URL || !import.meta.env.VITE_SUPABASE_ANON_KEY) {
-  console.warn("Supabase URL yoki Anon Key topilmadi! Iltimos, Vercel sozlamalarida Environment Variables ni qo'shing.");
-}
+const supabaseUrl  = 'https://ycffsnlrxalxcpfsrdjq.supabase.co';
+const supabaseKey  = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InljZmZzbmxyeGFseGNwZnNyZGpxIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODUwNjUxMDMsImV4cCI6MjEwMDY0MTEwM30.hI1bZSn1RJCalO1nQtJKAMYljflo1_3JtEdh3Q9-GUA';
 
 export const supabase = createClient(supabaseUrl, supabaseKey);
+
 

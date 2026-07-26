@@ -15,22 +15,11 @@ const LoginPage = () => {
   const [error,    setError]    = useState('');
   const [loading,  setLoading]  = useState(false);
 
-  const isConfigured = 
-    import.meta.env.VITE_SUPABASE_URL && 
-    !import.meta.env.VITE_SUPABASE_URL.includes('placeholder') && 
-    !import.meta.env.VITE_SUPABASE_URL.includes('abcdefghijklmnop') &&
-    !import.meta.env.VITE_SUPABASE_URL.includes('YOUR_PROJECT_REF');
-
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError('');
-
-    if (!isConfigured) {
-      setError('Xatolik: Supabase sozlamalari (.env) topilmadi yoki noto\'g\'ri. Iltimos, serverni o\'chirib yoqing yoki .env faylini tekshiring.');
-      return;
-    }
-
     setLoading(true);
+
 
     try {
       if (mode === 'login') {

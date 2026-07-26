@@ -41,10 +41,15 @@ export const useTransactions = (userId) => {
   }, [userId]);
 
   // Yangi tranzaksiya qo'shish + balansni yangilash
-  const addTransaction = async ({ amount, cashbackPercent = 5 }) => {
+  const addTransaction = async ({ amount, cashbackPercent = 5, type = 'cashback' }) => {
     if (!userId) return { error: 'Foydalanuvchi topilmadi' };
 
-    const cashbackAmount = Math.round(amount * cashbackPercent / 100);
+    let cashbackAmount = 0;
+    if (type === 'withdraw') {
+      cashbackAmount = -Math.abs(amount); // yechilgan keshbek (manfiy)
+    } else {
+      cashbackAmount = Math.round(amount * cashbackPercent / 100); // yig'ilgan keshbek (musbat)
+    }
 
     // Tranzaksiya yozish
     const { error: txError } = await supabase

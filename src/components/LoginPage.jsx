@@ -15,43 +15,63 @@ const LoginPage = () => {
   const [error,    setError]    = useState('');
   const [loading,  setLoading]  = useState(false);
 
+  const isConfigured = 
+    import.meta.env.VITE_SUPABASE_URL && 
+    !import.meta.env.VITE_SUPABASE_URL.includes('placeholder') && 
+    !import.meta.env.VITE_SUPABASE_URL.includes('abcdefghijklmnop') &&
+    !import.meta.env.VITE_SUPABASE_URL.includes('YOUR_PROJECT_REF');
+
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError('');
-    setLoading(true);
 
-    if (mode === 'login') {
-      const { data, error } = await signIn(email, password);
-
-      if (error) {
-        // Supabase xato kodlarini o'zbek tilida ko'rsatish
-        const msg = error.message?.toLowerCase() ?? '';
-        if (msg.includes('invalid login credentials') || msg.includes('invalid credentials')) {
-          setError('Email yoki parol noto\'g\'ri. Qayta tekshiring.');
-        } else if (msg.includes('email not confirmed')) {
-          setError('Emailingizni tasdiqlamadingiz. Supabase dashboard → Authentication → Providers → Email → "Confirm email" ni o\'chiring.');
-        } else if (msg.includes('too many requests') || msg.includes('after')) {
-          setError('Juda ko\'p urinish. Bir daqiqa kuting va qayta urinib ko\'ring.');
-        } else {
-          setError('Xatolik: ' + error.message);
-        }
-      }
-      // Muvaffaqiyatli bo'lsa AuthContext onAuthStateChange orqali avtomatik kiriladi
-    } else {
-      if (!name.trim()) { setError('Ism familiyani kiriting'); setLoading(false); return; }
-      const { error } = await signUp(email, password, name, phone);
-      if (error) {
-        const msg = error.message?.toLowerCase() ?? '';
-        if (msg.includes('already registered') || msg.includes('already exists')) {
-          setError('Bu email allaqachon ro\'yxatdan o\'tgan. Kirish tugmasini bosing.');
-        } else {
-          setError('Xatolik: ' + error.message);
-        }
-      }
+    if (!isConfigured) {
+      setError('Xatolik: Supabase sozlamalari (.env) topilmadi yoki noto\'g\'ri. Iltimos, serverni o\'chirib yoqing yoki .env faylini tekshiring.');
+      return;
     }
 
-    setLoading(false);
+    setLoading(true);
+
+    try {
+      if (mode === 'login') {
+        const { data, error } = await signIn(email, password);
+
+        if (error) {
+          const msg = error.message?.toLowerCase() ?? '';
+          if (msg.includes('invalid login credentials') || msg.includes('invalid credentials')) {
+            setError('Email yoki parol noto\'g\'ri. Qayta tekshiring.');
+          } else if (msg.includes('email not confirmed')) {
+            setError('Emailingizni tasdiqlamadingiz. Supabase dashboard → Authentication → Providers → Email → "Confirm email" ni o\'chiring.');
+          } else if (msg.includes('too many requests') || msg.includes('after')) {
+            setError('Juda ko\'p urinish. Bir daqiqa kuting va qayta urinib ko\'ring.');
+          } else {
+            setError('Xatolik: ' + error.message);
+          }
+        }
+      } else {
+        if (!name.trim()) { setError('Ism familiyani kiriting'); setLoading(false); return; }
+        const { error } = await signUp(email, password, name, phone);
+        if (error) {
+          const msg = error.message?.toLowerCase() ?? '';
+          if (msg.includes('already registered') || msg.includes('already exists')) {
+            setError('Bu email allaqachon ro\'yxatdan o\'tgan. Kirish tugmasini bosing.');
+          } else {
+            setError('Xatolik: ' + error.message);
+          }
+        }
+      }
+    } catch (err) {
+      const errMsg = err.message || '';
+      if (errMsg.toLowerCase().includes('failed to fetch')) {
+        setError('Ulanish xatosi (Failed to fetch). Supabase URL noto\'g\'ri yoki internet aloqasi yo\'q. .env fayli va loyiha URLini tekshiring hamda serverni qayta ishga tushiring.');
+      } else {
+        setError('Tizim xatosi: ' + errMsg);
+      }
+    } finally {
+      setLoading(false);
+    }
   };
+
 
 
   return (

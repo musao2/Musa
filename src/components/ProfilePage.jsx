@@ -1,41 +1,33 @@
 import React, { useState } from 'react';
 import {
-  IoPersonCircleOutline,
-  IoWalletOutline,
-  IoCopyOutline,
-  IoCallOutline,
-  IoHelpCircleOutline,
-  IoLogOutOutline,
-  IoChevronForwardOutline,
-  IoShieldCheckmarkOutline,
+  IoPersonCircleOutline, IoWalletOutline, IoCopyOutline,
+  IoCallOutline, IoHelpCircleOutline, IoLogOutOutline,
+  IoChevronForwardOutline, IoShieldCheckmarkOutline,
   IoNotificationsOutline,
 } from 'react-icons/io5';
 import { BsFuelPump } from 'react-icons/bs';
+import { useAuth } from '../context/AuthContext';
+import { useTransactions } from '../hooks/useTransactions';
 
-// --- Bitta foydalanuvchi ---
-const user = {
-  name:    'Abdullayev Sherzod',
-  phone:   '+998 90 123 45 67',
-  card:    'KB-2024-7842',
-  balance: '12,450 so\'m',
-  thisMonth: '5,200 so\'m',
-  totalPayments: 18,
-  level: 'Oltin 🥇',
-  station: 'Lukoil — Yunusobod',
-  stationPhone: '+998 71 234 56 78',
-};
+const formatSum = (n) => Number(n || 0).toLocaleString('uz-UZ') + ' so\'m';
 
 const menuItems = [
-  { icon: IoShieldCheckmarkOutline, label: 'Xavfsizlik',        sub: 'Parol va biometrik' },
-  { icon: IoNotificationsOutline,   label: 'Bildirishnomalar',  sub: 'Push va SMS' },
-  { icon: IoHelpCircleOutline,      label: 'Yordam',            sub: 'Savol va qo\'llab-quvvatlash' },
+  { icon: IoShieldCheckmarkOutline, label: 'Xavfsizlik',       sub: 'Parol va biometrik'          },
+  { icon: IoNotificationsOutline,   label: 'Bildirishnomalar', sub: 'Push va SMS'                 },
+  { icon: IoHelpCircleOutline,      label: 'Yordam',           sub: 'Savol va qo\'llab-quvvatlash' },
 ];
 
 const ProfilePage = () => {
-  const [copied, setCopied] = useState(false);
+  const { profile, signOut, user } = useAuth();
+  const { transactions }           = useTransactions(user?.id);
+  const [copied, setCopied]        = useState(false);
+
+  const thisMonthCashback = transactions
+    .filter(t => new Date(t.created_at).getMonth() === new Date().getMonth())
+    .reduce((s, t) => s + Number(t.cashback_amount), 0);
 
   const copyCard = () => {
-    navigator.clipboard.writeText(user.card).catch(() => {});
+    navigator.clipboard.writeText(profile?.card_number ?? '').catch(() => {});
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
   };
@@ -52,11 +44,11 @@ const ProfilePage = () => {
             <IoPersonCircleOutline size={46} className="text-white" />
           </div>
           <div>
-            <h2 className="text-[20px] font-extrabold">{user.name}</h2>
-            <p className="text-white/70 text-[13px]">{user.phone}</p>
+            <h2 className="text-[20px] font-extrabold">{profile?.name ?? '—'}</h2>
+            <p className="text-white/70 text-[13px]">{profile?.phone ?? user?.email}</p>
             <div className="flex items-center gap-1 mt-1 text-white/60 text-[12px]">
               <BsFuelPump size={12} />
-              <span>{user.station}</span>
+              <span>Lukoil — Yunusobod</span>
             </div>
           </div>
         </div>
@@ -67,22 +59,25 @@ const ProfilePage = () => {
         <div className="flex justify-between items-center mb-4">
           <div>
             <p className="text-gray-400 text-[12px]">Keshbek balansi</p>
-            <h3 className="text-[28px] font-extrabold text-[#1a1a1a] leading-none mt-0.5">{user.balance}</h3>
+            <h3 className="text-[28px] font-extrabold text-[#1a1a1a] leading-none mt-0.5">
+              {formatSum(profile?.cashback_balance)}
+            </h3>
           </div>
           <div className="w-12 h-12 bg-[#e8f5e9] rounded-xl flex items-center justify-center">
             <IoWalletOutline size={24} className="text-[#0f7b4c]" />
           </div>
         </div>
 
-        {/* Karta raqami */}
         <div className="flex items-center justify-between bg-[#f8f9fa] rounded-xl px-4 py-3">
           <div>
             <p className="text-gray-400 text-[11px]">Karta raqami</p>
-            <p className="font-bold text-[15px] text-[#1a1a1a]">{user.card}</p>
+            <p className="font-bold text-[15px] text-[#1a1a1a]">{profile?.card_number ?? '—'}</p>
           </div>
           <button
             onClick={copyCard}
-            className={`flex items-center gap-1.5 text-[13px] font-medium transition-colors ${copied ? 'text-[#0f7b4c]' : 'text-gray-400'}`}
+            className={`flex items-center gap-1.5 text-[13px] font-medium transition-colors ${
+              copied ? 'text-[#0f7b4c]' : 'text-gray-400'
+            }`}
           >
             <IoCopyOutline size={16} />
             {copied ? 'Nusxalandi!' : 'Nusxa'}
@@ -93,12 +88,12 @@ const ProfilePage = () => {
       {/* Statistika */}
       <div className="flex gap-3 mx-4 mt-4 mb-5">
         {[
-          { label: 'Bu oy',        value: user.thisMonth },
-          { label: "To'lovlar",    value: `${user.totalPayments} ta` },
-          { label: 'Daraja',       value: user.level },
+          { label: 'Bu oy',     value: formatSum(thisMonthCashback) },
+          { label: 'To\'lovlar', value: `${transactions.length} ta` },
+          { label: 'Daraja',    value: profile?.level ?? 'Standart' },
         ].map(s => (
           <div key={s.label} className="flex-1 bg-white rounded-2xl p-3 text-center shadow-sm">
-            <p className="text-[13px] font-extrabold text-[#1a1a1a]">{s.value}</p>
+            <p className="text-[13px] font-extrabold text-[#1a1a1a] leading-snug">{s.value}</p>
             <p className="text-gray-400 text-[11px] mt-0.5">{s.label}</p>
           </div>
         ))}
@@ -111,11 +106,11 @@ const ProfilePage = () => {
             <BsFuelPump size={18} />
           </div>
           <div>
-            <p className="font-bold text-[14px] text-[#1a1a1a]">{user.station}</p>
-            <p className="text-gray-400 text-[12px]">{user.stationPhone}</p>
+            <p className="font-bold text-[14px] text-[#1a1a1a]">Lukoil — Yunusobod</p>
+            <p className="text-gray-400 text-[12px]">+998 71 234 56 78</p>
           </div>
         </div>
-        <a href={`tel:${user.stationPhone}`} className="w-9 h-9 bg-[#0f7b4c] rounded-xl flex items-center justify-center">
+        <a href="tel:+998712345678" className="w-9 h-9 bg-[#0f7b4c] rounded-xl flex items-center justify-center">
           <IoCallOutline size={17} className="text-white" />
         </a>
       </div>
@@ -128,7 +123,9 @@ const ProfilePage = () => {
             return (
               <button
                 key={item.label}
-                className={`w-full flex items-center gap-3 px-4 py-4 text-left active:bg-gray-50 ${idx < menuItems.length - 1 ? 'border-b border-gray-100' : ''}`}
+                className={`w-full flex items-center gap-3 px-4 py-4 text-left active:bg-gray-50 ${
+                  idx < menuItems.length - 1 ? 'border-b border-gray-100' : ''
+                }`}
               >
                 <div className="w-9 h-9 bg-[#f0f7f4] rounded-xl flex items-center justify-center text-[#0f7b4c]">
                   <Icon size={18} />
@@ -146,7 +143,10 @@ const ProfilePage = () => {
 
       {/* Chiqish */}
       <div className="mx-4">
-        <button className="w-full flex items-center justify-center gap-2 py-4 bg-red-50 rounded-2xl text-red-400 font-semibold text-[15px] active:bg-red-100 transition-colors">
+        <button
+          onClick={signOut}
+          className="w-full flex items-center justify-center gap-2 py-4 bg-red-50 rounded-2xl text-red-400 font-semibold text-[15px] active:bg-red-100 transition-colors"
+        >
           <IoLogOutOutline size={20} />
           Chiqish
         </button>

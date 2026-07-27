@@ -62,9 +62,22 @@ async function handleUpdate(update) {
       console.log(`✅ Ulandi: ${phone} -> ${chatId}`);
       await botRequest('sendMessage', {
         chat_id: chatId,
-        text: `✅ Telefon raqamingiz muvaffaqiyatli ulandi: *${phone}*\n\nEndi KeshBak ilovasiga kirish uchun ushbu raqamni ishlating.`,
+        text: `✅ Telefon raqamingiz muvaffaqiyatli ulandi: *${phone}*\n\nEndi quyidagi tugma orqali KeshBak ilovasiga kirishingiz mumkin:`,
         parse_mode: 'Markdown',
-        reply_markup: { remove_keyboard: true }
+        reply_markup: {
+          remove_keyboard: true
+        }
+      });
+      // Ilovani ochish tugmasini yuborish
+      await botRequest('sendMessage', {
+        chat_id: chatId,
+        text: '👇 Ilovaga kirish:',
+        reply_markup: {
+          inline_keyboard: [[{
+            text: '🌐 KeshBak ilovasini ochish',
+            web_app: { url: 'https://musa-ashy-six.vercel.app/' }
+          }]]
+        }
       });
     }
     return;
@@ -73,19 +86,43 @@ async function handleUpdate(update) {
   // 2. /start buyrug'i
   if (message.text && message.text.startsWith('/start')) {
     console.log('🚀 /start qabul qilindi');
-    await botRequest('sendMessage', {
-      chat_id: chatId,
-      text: '👋 *KeshBak* tasdiqlash botiga xush kelibsiz!\n\nIlovaga kirish uchun quyidagi tugma orqali telefon raqamingizni ulang:',
-      parse_mode: 'Markdown',
-      reply_markup: {
-        keyboard: [[{
-          text: '📞 Telefon raqamni ulash',
-          request_contact: true
-        }]],
-        resize_keyboard: true,
-        one_time_keyboard: true
-      }
-    });
+
+    // Avval telefon raqam ulangan yoki yo'qligini tekshirish
+    const { data: existingUser } = await supabase
+      .from('telegram_users')
+      .select('phone')
+      .eq('chat_id', chatId.toString())
+      .maybeSingle();
+
+    if (existingUser) {
+      // Allaqachon ulangan — faqat ilovani ochish tugmasini ko'rsatish
+      await botRequest('sendMessage', {
+        chat_id: chatId,
+        text: `👋 Xush kelibsiz! Sizning raqamingiz: *${existingUser.phone}*\n\nQuyidagi tugma orqali ilovaga kiring:`,
+        parse_mode: 'Markdown',
+        reply_markup: {
+          inline_keyboard: [[{
+            text: '🌐 KeshBak ilovasini ochish',
+            web_app: { url: 'https://musa-ashy-six.vercel.app/' }
+          }]]
+        }
+      });
+    } else {
+      // Hali ulanmagan — telefon ulash tugmasini ko'rsatish
+      await botRequest('sendMessage', {
+        chat_id: chatId,
+        text: '👋 *KeshBak* tasdiqlash botiga xush kelibsiz!\n\nIlovaga kirish uchun avval telefon raqamingizni ulang:',
+        parse_mode: 'Markdown',
+        reply_markup: {
+          keyboard: [[{
+            text: '📞 Telefon raqamni ulash',
+            request_contact: true
+          }]],
+          resize_keyboard: true,
+          one_time_keyboard: true
+        }
+      });
+    }
   }
 }
 

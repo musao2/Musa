@@ -1,26 +1,42 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   IoPersonCircleOutline, IoWalletOutline, IoCopyOutline,
   IoCallOutline, IoHelpCircleOutline, IoLogOutOutline,
   IoChevronForwardOutline, IoShieldCheckmarkOutline,
-  IoNotificationsOutline,
+  IoNotificationsOutline, IoClose, IoKeyOutline, IoFingerPrintOutline
 } from 'react-icons/io5';
 import { BsFuelPump } from 'react-icons/bs';
 import { useAuth } from '../context/AuthContext';
 import { useTransactions } from '../hooks/useTransactions';
+import { supabase } from '../lib/supabase';
 
 const formatSum = (n) => Number(n || 0).toLocaleString('uz-UZ') + ' so\'m';
-
-const menuItems = [
-  { icon: IoShieldCheckmarkOutline, label: 'Xavfsizlik',       sub: 'Parol va biometrik'          },
-  { icon: IoNotificationsOutline,   label: 'Bildirishnomalar', sub: 'Push va SMS'                 },
-  { icon: IoHelpCircleOutline,      label: 'Yordam',           sub: 'Savol va qo\'llab-quvvatlash' },
-];
 
 const ProfilePage = () => {
   const { profile, signOut, user } = useAuth();
   const { transactions }           = useTransactions(user?.id);
   const [copied, setCopied]        = useState(false);
+
+  // Modal holatlari: null | 'security' | 'notifications'
+  const [activeModal, setActiveModal] = useState(null);
+
+  // Xavfsizlik sozlamalari
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [biometricsEnabled, setBiometricsEnabled] = useState(
+    localStorage.getItem('biometrics_enabled') === 'true'
+  );
+  
+  // Bildirishnoma sozlamalari
+  const [pushEnabled, setPushEnabled] = useState(
+    localStorage.getItem('push_enabled') !== 'false'
+  );
+  const [smsEnabled, setSmsEnabled] = useState(
+    localStorage.getItem('sms_enabled') === 'true'
+  );
+
+  const [message, setMessage] = useState({ text: '', type: '' });
+  const [loading, setLoading] = useState(false);
 
   const thisMonthCashback = transactions
     .filter(t => new Date(t.created_at).getMonth() === new Date().getMonth())
@@ -32,8 +48,71 @@ const ProfilePage = () => {
     setTimeout(() => setCopied(false), 2000);
   };
 
+  // Parolni o'zgartirish
+  const handlePasswordChange = async (e) => {
+    e.preventDefault();
+    if (newPassword !== confirmPassword) {
+      showToast('Parollar mos kelmadi!', 'error');
+      return;
+    }
+    if (newPassword.length < 6) {
+      showToast('Parol kamida 6 belgidan iborat bo\'lishi kerak!', 'error');
+      return;
+    }
+
+    setLoading(true);
+    const { error } = await supabase.auth.updateUser({ password: newPassword });
+    setLoading(false);
+
+    if (error) {
+      showToast('Xatolik: ' + error.message, 'error');
+    } else {
+      showToast('Parol muvaffaqiyatli yangilandi!', 'success');
+      setNewPassword('');
+      setConfirmPassword('');
+    }
+  };
+
+  // Biometrika o'zgartirish
+  const toggleBiometrics = () => {
+    const nextState = !biometricsEnabled;
+    setBiometricsEnabled(nextState);
+    localStorage.setItem('biometrics_enabled', String(nextState));
+    showToast(nextState ? 'Biometrika (Face ID / Touch ID) yoqildi' : 'Biometrika o\'chirildi', 'success');
+  };
+
+  // Push bildirishnoma o'zgartirish
+  const togglePush = () => {
+    const nextState = !pushEnabled;
+    setPushEnabled(nextState);
+    localStorage.setItem('push_enabled', String(nextState));
+    showToast(nextState ? 'Push bildirishnomalar yoqildi' : 'Push bildirishnomalar o\'chirildi', 'success');
+  };
+
+  // SMS bildirishnoma o'zgartirish
+  const toggleSms = () => {
+    const nextState = !smsEnabled;
+    setSmsEnabled(nextState);
+    localStorage.setItem('sms_enabled', String(nextState));
+    showToast(nextState ? 'SMS bildirishnomalar yoqildi' : 'SMS bildirishnomalar o\'chirildi', 'success');
+  };
+
+  const showToast = (text, type = 'success') => {
+    setMessage({ text, type });
+    setTimeout(() => setMessage({ text: '', type: '' }), 3000);
+  };
+
   return (
-    <div className="flex-1 bg-gray-50 w-full font-sans pb-6">
+    <div className="flex-1 bg-gray-50 w-full font-sans pb-6 relative">
+
+      {/* Toast xabar */}
+      {message.text && (
+        <div className={`fixed top-4 left-1/2 -translate-x-1/2 z-50 px-4 py-3 rounded-xl shadow-lg text-[13px] font-semibold transition-all text-center min-w-[280px] ${
+          message.type === 'success' ? 'bg-[#0f7b4c] text-white' : 'bg-red-600 text-white'
+        }`}>
+          {message.text}
+        </div>
+      )}
 
       {/* Profil sarlavhasi */}
       <div className="bg-[#0f7b4c] pt-6 pb-10 px-5 text-white relative overflow-hidden">
@@ -117,27 +196,49 @@ const ProfilePage = () => {
 
       {/* Menyu */}
       <div className="mx-4 mb-4">
-        <div className="bg-white rounded-2xl shadow-sm overflow-hidden">
-          {menuItems.map((item, idx) => {
-            const Icon = item.icon;
-            return (
-              <button
-                key={item.label}
-                className={`w-full flex items-center gap-3 px-4 py-4 text-left active:bg-gray-50 ${
-                  idx < menuItems.length - 1 ? 'border-b border-gray-100' : ''
-                }`}
-              >
-                <div className="w-9 h-9 bg-[#f0f7f4] rounded-xl flex items-center justify-center text-[#0f7b4c]">
-                  <Icon size={18} />
-                </div>
-                <div className="flex-1">
-                  <p className="font-semibold text-[14px] text-[#1a1a1a]">{item.label}</p>
-                  <p className="text-gray-400 text-[12px]">{item.sub}</p>
-                </div>
-                <IoChevronForwardOutline size={15} className="text-gray-300" />
-              </button>
-            );
-          })}
+        <div className="bg-white rounded-2xl shadow-sm overflow-hidden font-medium">
+          
+          {/* Xavfsizlik tugmasi */}
+          <button
+            onClick={() => setActiveModal('security')}
+            className="w-full flex items-center gap-3 px-4 py-4 text-left active:bg-gray-50 border-b border-gray-100"
+          >
+            <div className="w-9 h-9 bg-[#f0f7f4] rounded-xl flex items-center justify-center text-[#0f7b4c]">
+              <IoShieldCheckmarkOutline size={18} />
+            </div>
+            <div className="flex-1">
+              <p className="font-semibold text-[14px] text-[#1a1a1a]">Xavfsizlik</p>
+              <p className="text-gray-400 text-[12px]">Parol va biometrik</p>
+            </div>
+            <IoChevronForwardOutline size={15} className="text-gray-300" />
+          </button>
+
+          {/* Bildirishnomalar tugmasi */}
+          <button
+            onClick={() => setActiveModal('notifications')}
+            className="w-full flex items-center gap-3 px-4 py-4 text-left active:bg-gray-50 border-b border-gray-100"
+          >
+            <div className="w-9 h-9 bg-[#f0f7f4] rounded-xl flex items-center justify-center text-[#0f7b4c]">
+              <IoNotificationsOutline size={18} />
+            </div>
+            <div className="flex-1">
+              <p className="font-semibold text-[14px] text-[#1a1a1a]">Bildirishnomalar</p>
+              <p className="text-gray-400 text-[12px]">Push va SMS sozlamalari</p>
+            </div>
+            <IoChevronForwardOutline size={15} className="text-gray-300" />
+          </button>
+
+          {/* Yordam */}
+          <div className="w-full flex items-center gap-3 px-4 py-4 text-left active:bg-gray-50">
+            <div className="w-9 h-9 bg-[#f0f7f4] rounded-xl flex items-center justify-center text-[#0f7b4c]">
+              <IoHelpCircleOutline size={18} />
+            </div>
+            <div className="flex-1">
+              <p className="font-semibold text-[14px] text-[#1a1a1a]">Yordam</p>
+              <p className="text-gray-400 text-[12px]">Qo'llab-quvvatlash tizimi</p>
+            </div>
+          </div>
+
         </div>
       </div>
 
@@ -151,6 +252,144 @@ const ProfilePage = () => {
           Chiqish
         </button>
       </div>
+
+      {/* ----------------- MODALLAR (Security / Notifications) ----------------- */}
+
+      {/* XAVFSIZLIK MODALI */}
+      {activeModal === 'security' && (
+        <div className="fixed inset-0 z-40 bg-black/50 backdrop-blur-sm flex items-end justify-center">
+          <div className="bg-white rounded-t-3xl w-full max-w-md p-6 animate-slide-up shadow-2xl relative">
+            <button
+              onClick={() => setActiveModal(null)}
+              className="absolute right-4 top-4 text-gray-400 hover:text-gray-600"
+            >
+              <IoClose size={24} />
+            </button>
+            <h3 className="text-[17px] font-bold text-[#1a1a1a] mb-5 flex items-center gap-2">
+              <IoShieldCheckmarkOutline className="text-[#0f7b4c]" />
+              Xavfsizlik sozlamalari
+            </h3>
+
+            {/* Biometrika simulator */}
+            <div className="flex items-center justify-between bg-gray-50 rounded-2xl p-4 mb-6">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 bg-white rounded-xl flex items-center justify-center text-[#0f7b4c] border border-gray-150">
+                  <IoFingerPrintOutline size={20} />
+                </div>
+                <div>
+                  <p className="font-bold text-[14px] text-[#1a1a1a]">Biometrik himoya</p>
+                  <p className="text-gray-400 text-[12px]">Face ID yoki Touch ID</p>
+                </div>
+              </div>
+              <button
+                onClick={toggleBiometrics}
+                className={`w-12 h-6.5 rounded-full p-0.5 transition-colors duration-200 focus:outline-none ${
+                  biometricsEnabled ? 'bg-[#0f7b4c]' : 'bg-gray-300'
+                }`}
+              >
+                <div className={`w-5.5 h-5.5 rounded-full bg-white shadow-md transform transition-transform duration-200 ${
+                  biometricsEnabled ? 'translate-x-5.5' : 'translate-x-0'
+                }`} />
+              </button>
+            </div>
+
+            {/* Parolni yangilash */}
+            <form onSubmit={handlePasswordChange} className="flex flex-col gap-3">
+              <h4 className="text-[13px] font-bold text-gray-400 uppercase tracking-wider px-1">Parolni o'zgartirish</h4>
+              <div className="relative">
+                <IoKeyOutline className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400" />
+                <input
+                  type="password"
+                  placeholder="Yangi parol"
+                  value={newPassword}
+                  onChange={(e) => setNewPassword(e.target.value)}
+                  required
+                  minLength={6}
+                  className="w-full h-12 pl-10 pr-4 bg-gray-50 border border-gray-200 rounded-xl text-[14px] text-gray-850 outline-none focus:border-[#0f7b4c]"
+                />
+              </div>
+              <div className="relative">
+                <IoKeyOutline className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400" />
+                <input
+                  type="password"
+                  placeholder="Parolni tasdiqlang"
+                  value={confirmPassword}
+                  onChange={(e) => setConfirmPassword(e.target.value)}
+                  required
+                  minLength={6}
+                  className="w-full h-12 pl-10 pr-4 bg-gray-50 border border-gray-200 rounded-xl text-[14px] text-gray-850 outline-none focus:border-[#0f7b4c]"
+                />
+              </div>
+              <button
+                type="submit"
+                disabled={loading}
+                className="w-full h-12 bg-[#0f7b4c] text-white font-bold text-[14px] rounded-xl flex items-center justify-center gap-2 mt-2 active:scale-95 transition-all"
+              >
+                {loading ? 'Yangilanmoqda...' : 'Saqlash'}
+              </button>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* BILDIRISHNOMALAR MODALI */}
+      {activeModal === 'notifications' && (
+        <div className="fixed inset-0 z-40 bg-black/50 backdrop-blur-sm flex items-end justify-center">
+          <div className="bg-white rounded-t-3xl w-full max-w-md p-6 animate-slide-up shadow-2xl relative">
+            <button
+              onClick={() => setActiveModal(null)}
+              className="absolute right-4 top-4 text-gray-400 hover:text-gray-600"
+            >
+              <IoClose size={24} />
+            </button>
+            <h3 className="text-[17px] font-bold text-[#1a1a1a] mb-5 flex items-center gap-2">
+              <IoNotificationsOutline className="text-[#0f7b4c]" />
+              Bildirishnomalar sozlamalari
+            </h3>
+
+            <div className="flex flex-col gap-4">
+              
+              {/* Push Notifications Toggle */}
+              <div className="flex items-center justify-between border-b border-gray-100 pb-4">
+                <div>
+                  <p className="font-bold text-[14px] text-[#1a1a1a]">Push bildirishnomalar</p>
+                  <p className="text-gray-400 text-[12px]">Keshbek kelganda bildirishnoma yuborish</p>
+                </div>
+                <button
+                  onClick={togglePush}
+                  className={`w-12 h-6.5 rounded-full p-0.5 transition-colors duration-200 ${
+                    pushEnabled ? 'bg-[#0f7b4c]' : 'bg-gray-300'
+                  }`}
+                >
+                  <div className={`w-5.5 h-5.5 rounded-full bg-white shadow-md transform transition-transform duration-200 ${
+                    pushEnabled ? 'translate-x-5.5' : 'translate-x-0'
+                  }`} />
+                </button>
+              </div>
+
+              {/* SMS Notifications Toggle */}
+              <div className="flex items-center justify-between pb-2">
+                <div>
+                  <p className="font-bold text-[14px] text-[#1a1a1a]">SMS xabarnomalar</p>
+                  <p className="text-gray-400 text-[12px]">Tranzaksiyalar to'g'risida SMS yuborish</p>
+                </div>
+                <button
+                  onClick={toggleSms}
+                  className={`w-12 h-6.5 rounded-full p-0.5 transition-colors duration-200 ${
+                    smsEnabled ? 'bg-[#0f7b4c]' : 'bg-gray-300'
+                  }`}
+                >
+                  <div className={`w-5.5 h-5.5 rounded-full bg-white shadow-md transform transition-transform duration-200 ${
+                    smsEnabled ? 'translate-x-5.5' : 'translate-x-0'
+                  }`} />
+                </button>
+              </div>
+
+            </div>
+          </div>
+        </div>
+      )}
+
     </div>
   );
 };

@@ -7,12 +7,13 @@ const formatSum = (n) => Number(n || 0).toLocaleString('uz-UZ') + ' so\'m';
 
 const formatDate = (iso) => {
   const d = new Date(iso);
-  const now = new Date();
-  const diffDays = Math.floor((now - d) / 86400000);
-  const time = d.toLocaleTimeString('uz-UZ', { hour: '2-digit', minute: '2-digit' });
-  if (diffDays === 0) return `Bugun, ${time}`;
-  if (diffDays === 1) return `Kecha, ${time}`;
-  return d.toLocaleDateString('uz-UZ', { day: 'numeric', month: 'short' }) + `, ${time}`;
+  const pad = (n) => String(n).padStart(2, '0');
+  const day = pad(d.getDate());
+  const month = pad(d.getMonth() + 1);
+  const year = d.getFullYear();
+  const hour = pad(d.getHours());
+  const minute = pad(d.getMinutes());
+  return `${day}.${month}.${year} ${hour}:${minute}`;
 };
 
 const HistoryPage = () => {

@@ -46,7 +46,7 @@ export const useTransactions = (userId) => {
 
     let cashbackAmount = 0;
     if (type === 'withdraw') {
-      if (currentBalance < amount) {
+      if (Number(currentBalance) < Number(amount)) {
         return { error: 'Balansda yetarli keshbek mavjud emas!' };
       }
       cashbackAmount = -Math.abs(amount); // yechilgan keshbek (manfiy)

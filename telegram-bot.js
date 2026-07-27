@@ -1,10 +1,10 @@
 import { createClient } from '@supabase/supabase-js';
 
 // Supabase sozlamalari
-const SUPABASE_URL = 'https://ycffsnlrxalxcpfsrdjq.supabase.co';
-const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InljZmZzbmxyeGFseGNwZnNyZGpxIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODUwNjUxMDMsImV4cCI6MjEwMDY0MTEwM30.hI1bZSn1RJCalO1nQtJKAMYljflo1_3JtEdh3Q9-GUA';
+const SUPABASE_URL = process.env.SUPABASE_URL || 'https://ycffsnlrxalxcpfsrdjq.supabase.co';
+const SUPABASE_KEY = process.env.SUPABASE_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InljZmZzbmxyeGFseGNwZnNyZGpxIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODUwNjUxMDMsImV4cCI6MjEwMDY0MTEwM30.hI1bZSn1RJCalO1nQtJKAMYljflo1_3JtEdh3Q9-GUA';
 
-const BOT_TOKEN = '8555069737:AAHJpPA93rB-fkLdolekcc8kSmGruPm-9dw';
+const BOT_TOKEN = process.env.BOT_TOKEN || '8555069737:AAHJpPA93rB-fkLdolekcc8kSmGruPm-9dw';
 const API_BASE = `https://api.telegram.org/bot${BOT_TOKEN}`;
 
 const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);

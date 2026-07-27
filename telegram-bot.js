@@ -11,6 +11,9 @@ const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
 
 let offset = 0;
 
+// Allaqachon yuborilgan kodlarni eslab qolish (takroriy yuborishni oldini olish)
+const sentCodes = new Set();
+
 // ========== Telegram API ==========
 async function botRequest(method, data = {}) {
   try {
@@ -105,39 +108,35 @@ async function pollUpdates() {
 // ========== OTP Kodlarni Telegramga yuborish ==========
 async function checkPendingOTPs() {
   try {
-    // status = 'pending' bo'lgan barcha kodlarni olish
-    const { data: pendingCodes, error } = await supabase
+    // otp_codes jadvalidagi barcha kodlarni olish
+    const { data: codes, error } = await supabase
       .from('otp_codes')
-      .select('*')
-      .eq('status', 'pending');
+      .select('*');
 
-    if (error) {
-      // Agar 'status' ustuni yo'q bo'lsa, xatolik beradi — uni e'tiborsiz qoldiramiz
+    if (error || !codes || codes.length === 0) {
+      setTimeout(checkPendingOTPs, 1500);
       return;
     }
 
-    if (!pendingCodes || pendingCodes.length === 0) return;
+    for (const otp of codes) {
+      // Muddati o'tgan kodlarni o'tkazib yuborish
+      if (new Date(otp.expires_at) < new Date()) continue;
 
-    for (const otp of pendingCodes) {
-      // Bu telefon raqamning chat_id sini topish
+      // Allaqachon yuborilgan kodlarni o'tkazib yuborish
+      const key = `${otp.phone}:${otp.code}`;
+      if (sentCodes.has(key)) continue;
+
+      // Chat ID ni topish
       const { data: tgUser } = await supabase
         .from('telegram_users')
         .select('chat_id')
         .eq('phone', otp.phone)
         .maybeSingle();
 
-      if (!tgUser) {
-        console.log(`⚠️ Chat ID topilmadi: ${otp.phone}`);
-        // Status'ni 'no_chat' ga o'zgartirish
-        await supabase
-          .from('otp_codes')
-          .update({ status: 'no_chat' })
-          .eq('phone', otp.phone);
-        continue;
-      }
+      if (!tgUser) continue;
 
       // Telegram orqali kod yuborish
-      const message = `🔐 KeshBak tasdiqlash kodi:\n\n📱 Raqam: ${otp.phone}\n🔑 Kod: *${otp.code}*\n\n⏰ Kod 5 daqiqa davomida amal qiladi.\n❗ Bu kodni hech kimga bermang!`;
+      const message = `🔐 KeshBak tasdiqlash kodi:\n\n📱 Raqam: ${otp.phone}\n🔑 Kod: *${otp.code}*\n\n⏰ Kod 5 daqiqa amal qiladi.\n❗ Bu kodni hech kimga bermang!`;
 
       const result = await botRequest('sendMessage', {
         chat_id: tgUser.chat_id,
@@ -147,23 +146,23 @@ async function checkPendingOTPs() {
 
       if (result.ok) {
         console.log(`📤 OTP yuborildi: ${otp.phone} -> kod: ${otp.code}`);
-        // Status'ni 'sent' ga o'zgartirish
-        await supabase
-          .from('otp_codes')
-          .update({ status: 'sent' })
-          .eq('phone', otp.phone);
-      } else {
-        console.error(`❌ OTP yuborilmadi: ${otp.phone}`);
-        await supabase
-          .from('otp_codes')
-          .update({ status: 'failed' })
-          .eq('phone', otp.phone);
+        sentCodes.add(key);
+
+        // Agar status ustuni bo'lsa, uni yangilaymiz (xato bo'lsa e'tiborsiz)
+        try {
+          await supabase
+            .from('otp_codes')
+            .update({ status: 'sent' })
+            .eq('phone', otp.phone);
+        } catch {
+          // status ustuni yo'q bo'lishi mumkin — OK
+        }
       }
     }
   } catch (err) {
-    // Silent — xatolik bo'lsa ham to'xtamasin
+    // Xatolik bo'lsa ham to'xtamasin
   }
-  setTimeout(checkPendingOTPs, 1000); // Har 1 soniyada tekshirish
+  setTimeout(checkPendingOTPs, 1500);
 }
 
 // ========== Ishga tushirish ==========
@@ -187,9 +186,8 @@ async function start() {
   console.log('📡 Telegram xabarlarni kutish...');
   console.log('🔄 OTP kodlarni kuzatish...');
 
-  // Ikkita jarayonni parallel ishga tushirish
-  pollUpdates();       // Telegram xabarlarni tinglash
-  checkPendingOTPs();  // OTP kodlarni Telegramga yuborish
+  pollUpdates();
+  checkPendingOTPs();
 }
 
 start();

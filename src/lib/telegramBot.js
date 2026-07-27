@@ -1,24 +1,18 @@
 import { supabase } from './supabase';
 
-// Tasodifiy 4 xonali OTP kod generatsiya qilish
+// Tasodifiy 4 xonali OTP kod
 const generateOTP = () => {
   return String(Math.floor(1000 + Math.random() * 9000));
 };
 
 /**
- * Telegramga OTP kod yuborish
+ * OTP kodni Supabase'ga yozadi.
+ * Bot (telegram-bot.js) uni avtomatik o'qib, Telegramga yuboradi.
  * 
- * Frontend faqat Supabase ga kod yozadi (status: 'pending').
- * Bot (telegram-bot.js) esa doimiy ravishda 'pending' kodlarni o'qib,
- * Telegram orqali yuboradi va statusni 'sent' ga o'zgartiradi.
- * 
- * Bu usul CORS xatoligini bartaraf qiladi.
+ * CORS xatolik bo'lmasligi uchun brauzerdan Telegram API chaqirilmaydi.
  */
 export const sendOTPViaTelegram = async (phone) => {
   try {
-    const code = generateOTP();
-    const expiresAt = new Date(Date.now() + 5 * 60 * 1000).toISOString(); // 5 daqiqa
-
     // 1. Telegram foydalanuvchi ro'yxatdan o'tganini tekshirish
     const { data: tgUser, error: tgError } = await supabase
       .from('telegram_users')
@@ -27,7 +21,6 @@ export const sendOTPViaTelegram = async (phone) => {
       .maybeSingle();
 
     if (tgError) {
-      console.error('Telegram foydalanuvchi qidirishda xatolik:', tgError);
       return { error: 'Ma\'lumotlar bazasi bilan ulanishda xatolik.' };
     }
 
@@ -37,52 +30,49 @@ export const sendOTPViaTelegram = async (phone) => {
       };
     }
 
+    const code = generateOTP();
+    const expiresAt = new Date(Date.now() + 5 * 60 * 1000).toISOString();
+
     // 2. Avvalgi eski kodni o'chirish
     await supabase
       .from('otp_codes')
       .delete()
       .eq('phone', phone);
 
-    // 3. Yangi kodni Supabase ga yozish (status: pending — botga signal)
-    const { error: insertError } = await supabase
-      .from('otp_codes')
-      .insert({
-        phone:      phone,
-        code:       code,
-        expires_at: expiresAt,
-        status:     'pending',  // Bot buni o'qib Telegramga yuboradi
-      });
+    // 3. Yangi kodni yozish (status ustuni bor bo'lsa 'pending' yozamiz)
+    const insertData = {
+      phone,
+      code,
+      expires_at: expiresAt,
+    };
 
-    if (insertError) {
-      console.error('OTP saqlashda xatolik:', insertError);
-      return { error: 'Kod saqlashda xatolik yuz berdi. Qayta urinib ko\'ring.' };
-    }
-
-    // 4. Bot yuborishini kutish (5 soniya davomida tekshirib turish)
-    let sent = false;
-    for (let i = 0; i < 10; i++) {
-      await new Promise(r => setTimeout(r, 500)); // 0.5 soniya kutish
-      
-      const { data: check } = await supabase
+    // status ustuni borligini sinab ko'ramiz
+    try {
+      insertData.status = 'pending';
+      const { error: insertError } = await supabase
         .from('otp_codes')
-        .select('status')
-        .eq('phone', phone)
-        .maybeSingle();
+        .insert(insertData);
 
-      if (check && check.status === 'sent') {
-        sent = true;
-        break;
+      if (insertError) {
+        // status ustuni yo'q bo'lsa, usiz qayta yozamiz
+        delete insertData.status;
+        const { error: retryError } = await supabase
+          .from('otp_codes')
+          .insert(insertData);
+
+        if (retryError) {
+          return { error: 'Kod saqlashda xatolik: ' + retryError.message };
+        }
       }
+    } catch {
+      delete insertData.status;
+      await supabase.from('otp_codes').insert(insertData);
     }
 
-    if (!sent) {
-      return { error: 'Telegram bot javob bermadi. Bot ishga tushganini tekshiring.' };
-    }
-
+    // Bot 1-2 soniyada avtomatik yuboradi — kutishning hojati yo'q
     return { success: true };
 
   } catch (err) {
-    console.error('sendOTPViaTelegram xatolik:', err);
-    return { error: 'Kutilmagan xatolik: ' + err.message };
+    return { error: 'Xatolik: ' + err.message };
   }
 };

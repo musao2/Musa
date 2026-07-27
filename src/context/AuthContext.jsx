@@ -42,30 +42,108 @@ export const AuthProvider = ({ children }) => {
     return () => subscription.unsubscribe();
   }, []);
 
-  // Login
-  const signIn = async (email, password) => {
-    const { data, error } = await supabase.auth.signInWithPassword({ email, password });
-    return { data, error };
-  };
+  // OTP tasdiqlash va tizimga kirish (yoki ro'yxatdan o'tish)
+  const verifyOTPAndLogin = async (phone, code, name = '') => {
+    const cleanPhone = phone.trim();
+    const cleanCode = code.trim();
 
-  // Ro'yxatdan o'tish
-  const signUp = async (email, password, name, phone) => {
-    const { data, error } = await supabase.auth.signUp({ email, password });
-    if (error) return { error };
+    // 1. otp_codes jadvalidan kodni olish va tekshirish
+    const { data: otpData, error: otpError } = await supabase
+      .from('otp_codes')
+      .select('*')
+      .eq('phone', cleanPhone)
+      .maybeSingle();
 
-    // Profil yaratish
-    if (data.user) {
-      const cardNumber = 'KB-' + new Date().getFullYear() + '-' + Math.floor(Math.random() * 9000 + 1000);
-      await supabase.from('profiles').insert({
-        id:               data.user.id,
-        name,
-        phone,
-        card_number:      cardNumber,
-        cashback_balance: 0,
-        level:            'Standart',
-      });
+    if (otpError) {
+      return { error: 'Ulanish xatosi: ' + otpError.message };
     }
-    return { data, error: null };
+
+    if (!otpData) {
+      return { error: 'Keshbek uchun kod yuborilmagan yoki topilmadi.' };
+    }
+
+    // Kod muddati o'tganligini tekshirish
+    if (new Date(otpData.expires_at) < new Date()) {
+      return { error: 'Tasdiqlash kodining vaqti o\'tgan. Qayta kod yuboring.' };
+    }
+
+    // Kodni tekshirish
+    if (otpData.code !== cleanCode) {
+      return { error: 'Kiritilgan tasdiqlash kodi noto\'g\'ri!' };
+    }
+
+    // Ishlatilgan kodni o'chirib tashlaymiz
+    await supabase.from('otp_codes').delete().eq('phone', cleanPhone);
+
+    // 2. Supabase auth tizimi uchun email/parol hosil qilish
+    const email = `${cleanPhone.replace('+', '')}@keshbak.uz`;
+    const password = `OtpSecretPasswordFor_${cleanPhone.replace('+', '')}`;
+
+    // Avval profillarda bu telefon borligini tekshirish
+    const { data: profileExists } = await supabase
+      .from('profiles')
+      .select('id')
+      .eq('phone', cleanPhone)
+      .maybeSingle();
+
+    if (!profileExists) {
+      // Ro'yxatdan o'tish (Sign Up)
+      const { data: authData, error: signUpError } = await supabase.auth.signUp({
+        email,
+        password,
+      });
+
+      if (signUpError) {
+        // Agar authda bor bo'lsa, lekin profilesda bo'lmasa, shunchaki kirib profil yaratamiz
+        if (signUpError.message.includes('already registered') || signUpError.message.includes('already exists')) {
+          const { data: signInData, error: signInError } = await supabase.auth.signInWithPassword({
+            email,
+            password,
+          });
+          if (signInError) return { error: signInError.message };
+
+          const cardNumber = 'KB-' + new Date().getFullYear() + '-' + Math.floor(Math.random() * 9000 + 1000);
+          await supabase.from('profiles').insert({
+            id:               signInData.user.id,
+            name:             name || 'Mijoz',
+            phone:            cleanPhone,
+            card_number:      cardNumber,
+            cashback_balance: 0,
+            level:            'Standart',
+          });
+
+          await loadProfile(signInData.user.id);
+          return { success: true };
+        }
+        return { error: signUpError.message };
+      }
+
+      if (authData?.user) {
+        const cardNumber = 'KB-' + new Date().getFullYear() + '-' + Math.floor(Math.random() * 9000 + 1000);
+        await supabase.from('profiles').insert({
+          id:               authData.user.id,
+          name:             name || 'Mijoz',
+          phone:            cleanPhone,
+          card_number:      cardNumber,
+          cashback_balance: 0,
+          level:            'Standart',
+        });
+        await loadProfile(authData.user.id);
+      }
+    } else {
+      // Kirish (Sign In)
+      const { data: signInData, error: signInError } = await supabase.auth.signInWithPassword({
+        email,
+        password,
+      });
+
+      if (signInError) {
+        return { error: signInError.message };
+      }
+      await loadProfile(signInData.user.id);
+    }
+
+    return { success: true };
   };
 
   // Chiqish
@@ -73,16 +151,17 @@ export const AuthProvider = ({ children }) => {
     await supabase.auth.signOut();
   };
 
-  // Balansni yangilash (tranzaksiyadan keyin)
+  // Balansni yangilash
   const refreshProfile = async () => {
     if (user) await loadProfile(user.id);
   };
 
   return (
-    <AuthContext.Provider value={{ user, profile, loading, signIn, signUp, signOut, refreshProfile }}>
+    <AuthContext.Provider value={{ user, profile, loading, verifyOTPAndLogin, signOut, refreshProfile }}>
       {children}
     </AuthContext.Provider>
   );
 };
 
 export const useAuth = () => useContext(AuthContext);
+

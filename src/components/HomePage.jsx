@@ -31,11 +31,12 @@ const HomePage = () => {
 
   const handleScan = async (qrData) => {
     setShowScanner(false);
-
-    // QR dan summani to'g'ri ajratish (KESHBAK|uuid|type|amount formatini ajratamiz)
+    
+    // QR dan summa va keshbek foizini to'g'ri ajratish
     let amount = 100000;
     let tokenId = '';
     let scanType = 'cashback';
+    let cashbackPercent = 1.5; // boshlang'ich default 1.5%
 
     if (qrData && qrData.includes('|')) {
       const parts = qrData.split('|');
@@ -43,6 +44,8 @@ const HomePage = () => {
         tokenId = parts[1];
         scanType = parts[2];
         amount = parseInt(parts[3], 10) || 0;
+        // QR tarkibidagi foizni o'qiymiz, agar bo'lmasa 1.5% deb oladi
+        cashbackPercent = parts.length >= 5 ? parseFloat(parts[4]) : 1.5;
       }
     } else if (qrData) {
       // Eskicha format yoki faqat raqam bo'lsa
@@ -50,9 +53,10 @@ const HomePage = () => {
       amount = match ? parseInt(match[1]) : 100000;
     }
 
+    // Tranzaksiyani yuborish
     const { cashbackAmount, error } = await addTransaction({ 
       amount, 
-      cashbackPercent: 5,
+      cashbackPercent: cashbackPercent, // Dinamik foizni yuboramiz
       type: scanType,
       currentBalance: Number(profile?.cashback_balance || 0)
     });
@@ -61,9 +65,9 @@ const HomePage = () => {
       setScanMsg('❌ Xatolik: ' + error);
     } else {
       if (scanType === 'withdraw') {
-        setScanMsg(`✅ ${formatSum(cashbackAmount)} keshbek yechib olindi!`);
+        setScanMsg(`✅ ${formatSum(amount)} keshbek yechib olindi!`);
       } else {
-        setScanMsg(`✅ +${formatSum(cashbackAmount)} keshbek yig'ildi!`);
+        setScanMsg(`✅ +${formatSum(cashbackAmount)} keshbek yig'ildi! (${cashbackPercent}%)`);
       }
       await refreshProfile();
     }

@@ -36,7 +36,22 @@ const HomePage = () => {
     let amount = 100000;
     let tokenId = '';
     let scanType = 'cashback';
-    let cashbackPercent = 1.5; // boshlang'ich default 1.5%
+    // Bazadan standart keshbek foizini olish
+    let defaultPercent = 5.0;
+    try {
+      const { data: stData } = await supabase
+        .from('station_settings')
+        .select('cashback_percent')
+        .eq('id', 'main')
+        .maybeSingle();
+      if (stData?.cashback_percent) {
+        defaultPercent = parseFloat(stData.cashback_percent);
+      }
+    } catch (e) {
+      console.error(e);
+    }
+
+    let cashbackPercent = defaultPercent;
 
     if (qrData && qrData.includes('|')) {
       const parts = qrData.split('|');
@@ -44,8 +59,8 @@ const HomePage = () => {
         tokenId = parts[1];
         scanType = parts[2];
         amount = parseInt(parts[3], 10) || 0;
-        // QR tarkibidagi foizni o'qiymiz, agar bo'lmasa 1.5% deb oladi
-        cashbackPercent = parts.length >= 5 ? parseFloat(parts[4]) : 1.5;
+        // QR tarkibidagi foizni o'qiymiz, agar bo'lmasa bazadagi standart foiz olinadi
+        cashbackPercent = parts.length >= 5 ? parseFloat(parts[4]) : defaultPercent;
       }
     } else if (qrData) {
       // Eskicha format yoki faqat raqam bo'lsa

@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   IoLocationOutline,
   IoCallOutline,
@@ -7,22 +7,60 @@ import {
   IoStarOutline,
 } from 'react-icons/io5';
 import { BsFuelPump } from 'react-icons/bs';
+import { supabase } from '../lib/supabase';
 
-// --- Bitta shaxobcha ma'lumotlari ---
-const station = {
+const DEFAULT_STATION = {
   name: 'Lukoil — Yunusobod',
   address: 'Yunusobod tumani, 14-mavze, 7-uy',
   phone: '+998 71 234 56 78',
-  workHours: 'Har kuni: 07:00 – 23:00',
-  cashback: '5%',
+  work_hours: 'Har kuni: 07:00 – 23:00',
+  cashback_percent: 5.0,
   rating: 4.8,
-  fuel: ['AI-80', 'AI-91', 'AI-95', 'Dizel'],
-  isOpen: true,
+  fuel_types: ['AI-80', 'AI-91', 'AI-95', 'Dizel'],
+  is_open: true,
 };
 
 const MapPage = () => {
+  const [station, setStation] = useState(DEFAULT_STATION);
+  const [loading, setLoading] = useState(true);
+
+  // Stansiya ma'lumotlarini Supabase bazasidan o'qish
+  const fetchStationSettings = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('station_settings')
+        .select('*')
+        .eq('id', 'main')
+        .maybeSingle();
+
+      if (!error && data) {
+        setStation(data);
+      }
+    } catch (err) {
+      console.error('Station settings fetch error:', err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchStationSettings();
+
+    // Realtime — Super Admin o'zgartirganda darhol yangilanadi
+    const channel = supabase
+      .channel('station_settings_changes')
+      .on('postgres_changes', {
+        event: '*',
+        schema: 'public',
+        table: 'station_settings',
+      }, () => fetchStationSettings())
+      .subscribe();
+
+    return () => supabase.removeChannel(channel);
+  }, []);
+
   return (
-    <div className="flex-1 bg-gray-50 w-full font-sans flex flex-col">
+    <div className="flex-1 bg-gray-50 w-full font-sans flex flex-col pb-6">
 
       {/* Xarita (demo) */}
       <div className="relative mx-4 mt-5 rounded-2xl overflow-hidden" style={{ height: 220 }}>
@@ -46,7 +84,7 @@ const MapPage = () => {
             <BsFuelPump size={22} color="#fff" />
           </div>
           <div className="absolute -top-7 left-1/2 -translate-x-1/2 bg-white text-[#0f7b4c] font-bold text-[11px] px-2 py-0.5 rounded-full shadow whitespace-nowrap">
-            Lukoil
+            {station.name || 'Lukoil'}
           </div>
         </div>
         {/* Mening joylashuvim */}
@@ -61,7 +99,7 @@ const MapPage = () => {
       {/* Shaxobcha kartasi */}
       <div className="mx-4 mt-4 bg-white rounded-2xl shadow-sm overflow-hidden">
         {/* Yashil chiziq */}
-        <div className="h-1.5 bg-[#0f7b4c]" />
+        <div className={`h-1.5 ${station.is_open ? 'bg-[#0f7b4c]' : 'bg-red-500'}`} />
         <div className="p-4">
           {/* Nomi va holati */}
           <div className="flex justify-between items-start mb-3">
@@ -72,8 +110,8 @@ const MapPage = () => {
                 <span>{station.address}</span>
               </div>
             </div>
-            <span className={`text-[12px] font-bold px-2.5 py-1 rounded-full ${station.isOpen ? 'bg-[#e8f5e9] text-[#0f7b4c]' : 'bg-red-50 text-red-400'}`}>
-              {station.isOpen ? '● Ochiq' : '● Yopiq'}
+            <span className={`text-[12px] font-bold px-2.5 py-1 rounded-full ${station.is_open ? 'bg-[#e8f5e9] text-[#0f7b4c]' : 'bg-red-50 text-red-500'}`}>
+              {station.is_open ? '● Ochiq' : '● Yopiq'}
             </span>
           </div>
 
@@ -85,11 +123,11 @@ const MapPage = () => {
             </div>
             <div className="flex items-center gap-2.5 text-[13px] text-gray-600">
               <IoTimeOutline size={16} className="text-[#0f7b4c]" />
-              <span>{station.workHours}</span>
+              <span>{station.work_hours}</span>
             </div>
             <div className="flex items-center gap-2.5 text-[13px] text-gray-600">
               <IoStarOutline size={16} className="text-yellow-400" />
-              <span>Reyting: <strong className="text-[#1a1a1a]">{station.rating}</strong> / 5.0</span>
+              <span>Reyting: <strong className="text-[#1a1a1a]">{station.rating ?? 4.8}</strong> / 5.0</span>
             </div>
           </div>
 
@@ -97,12 +135,12 @@ const MapPage = () => {
           <div className="bg-[#f0f7f4] rounded-xl p-3 flex items-center justify-between mb-4">
             <div>
               <p className="text-[12px] text-gray-500">Keshbek foizi</p>
-              <p className="text-[22px] font-extrabold text-[#0f7b4c]">{station.cashback}</p>
+              <p className="text-[22px] font-extrabold text-[#0f7b4c]">{station.cashback_percent}%</p>
             </div>
             <div className="text-right">
               <p className="text-[12px] text-gray-500">Yoqilg'i turlari</p>
               <div className="flex flex-wrap gap-1 justify-end mt-1">
-                {station.fuel.map(f => (
+                {(station.fuel_types || []).map(f => (
                   <span key={f} className="bg-white text-gray-600 text-[11px] px-2 py-0.5 rounded-full border border-gray-200 font-medium">
                     {f}
                   </span>

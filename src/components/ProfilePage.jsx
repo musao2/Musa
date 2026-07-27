@@ -256,9 +256,10 @@ const ProfilePage = () => {
       {/* ----------------- MODALLAR (Security / Notifications) ----------------- */}
 
       {/* XAVFSIZLIK MODALI */}
+      {/* XAVFSIZLIK MODALI */}
       {activeModal === 'security' && (
-        <div className="fixed inset-0 z-40 bg-black/50 backdrop-blur-sm flex items-end justify-center">
-          <div className="bg-white rounded-t-3xl w-full max-w-md p-6 animate-slide-up shadow-2xl relative">
+        <div className="fixed inset-0 z-[100] bg-black/65 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl w-full max-w-sm p-6 shadow-2xl relative animate-slide-down">
             <button
               onClick={() => setActiveModal(null)}
               className="absolute right-4 top-4 text-gray-400 hover:text-gray-600"
@@ -334,8 +335,8 @@ const ProfilePage = () => {
 
       {/* BILDIRISHNOMALAR MODALI */}
       {activeModal === 'notifications' && (
-        <div className="fixed inset-0 z-40 bg-black/50 backdrop-blur-sm flex items-end justify-center">
-          <div className="bg-white rounded-t-3xl w-full max-w-md p-6 animate-slide-up shadow-2xl relative">
+        <div className="fixed inset-0 z-[100] bg-black/65 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl w-full max-w-sm p-6 shadow-2xl relative animate-slide-down">
             <button
               onClick={() => setActiveModal(null)}
               className="absolute right-4 top-4 text-gray-400 hover:text-gray-600"
@@ -344,7 +345,7 @@ const ProfilePage = () => {
             </button>
             <h3 className="text-[17px] font-bold text-[#1a1a1a] mb-5 flex items-center gap-2">
               <IoNotificationsOutline className="text-[#0f7b4c]" />
-              Bildirishnomalar sozlamalari
+              Bildirishnomalar
             </h3>
 
             <div className="flex flex-col gap-4">
@@ -353,7 +354,7 @@ const ProfilePage = () => {
               <div className="flex items-center justify-between border-b border-gray-100 pb-4">
                 <div>
                   <p className="font-bold text-[14px] text-[#1a1a1a]">Push bildirishnomalar</p>
-                  <p className="text-gray-400 text-[12px]">Keshbek kelganda bildirishnoma yuborish</p>
+                  <p className="text-gray-400 text-[12px]">Keshbek kelganda bildirishnoma</p>
                 </div>
                 <button
                   onClick={togglePush}
@@ -371,7 +372,7 @@ const ProfilePage = () => {
               <div className="flex items-center justify-between pb-2">
                 <div>
                   <p className="font-bold text-[14px] text-[#1a1a1a]">SMS xabarnomalar</p>
-                  <p className="text-gray-400 text-[12px]">Tranzaksiyalar to'g'risida SMS yuborish</p>
+                  <p className="text-gray-400 text-[12px]">SMS orqali bildirishnoma yuborish</p>
                 </div>
                 <button
                   onClick={toggleSms}

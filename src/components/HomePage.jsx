@@ -53,7 +53,8 @@ const HomePage = () => {
     const { cashbackAmount, error } = await addTransaction({ 
       amount, 
       cashbackPercent: 5,
-      type: scanType
+      type: scanType,
+      currentBalance: Number(profile?.cashback_balance || 0)
     });
 
     if (error) {

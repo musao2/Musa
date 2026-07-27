@@ -41,11 +41,14 @@ export const useTransactions = (userId) => {
   }, [userId]);
 
   // Yangi tranzaksiya qo'shish + balansni yangilash
-  const addTransaction = async ({ amount, cashbackPercent = 5, type = 'cashback' }) => {
+  const addTransaction = async ({ amount, cashbackPercent = 5, type = 'cashback', currentBalance = 0 }) => {
     if (!userId) return { error: 'Foydalanuvchi topilmadi' };
 
     let cashbackAmount = 0;
     if (type === 'withdraw') {
+      if (currentBalance < amount) {
+        return { error: 'Balansda yetarli keshbek mavjud emas!' };
+      }
       cashbackAmount = -Math.abs(amount); // yechilgan keshbek (manfiy)
     } else {
       cashbackAmount = Math.round(amount * cashbackPercent / 100); // yig'ilgan keshbek (musbat)

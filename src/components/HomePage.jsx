@@ -59,13 +59,14 @@ const HomePage = () => {
         tokenId = parts[1];
         scanType = parts[2];
         amount = parseInt(parts[3], 10) || 0;
-        // QR tarkibidagi foizni o'qiymiz, agar bo'lmasa bazadagi standart foiz olinadi
         cashbackPercent = parts.length >= 5 ? parseFloat(parts[4]) : defaultPercent;
       }
-    } else if (qrData) {
-      // Eskicha format yoki faqat raqam bo'lsa
-      const match = qrData.match(/(\d+)/);
-      amount = match ? parseInt(match[1]) : 100000;
+    }
+
+    if (!tokenId) {
+      setScanMsg('❌ Yaroqsiz QR-kod! Rasmiy KeshBak QR-kodini skanerlang.');
+      setTimeout(() => setScanMsg(''), 3500);
+      return;
     }
 
     // Tranzaksiyani yuborish

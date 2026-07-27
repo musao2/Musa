@@ -5,6 +5,7 @@ import {
   IoTimeOutline,
   IoNavigateOutline,
   IoStarOutline,
+  IoMapOutline,
 } from 'react-icons/io5';
 import { BsFuelPump } from 'react-icons/bs';
 import { supabase } from '../lib/supabase';
@@ -18,6 +19,8 @@ const DEFAULT_STATION = {
   rating: 4.8,
   fuel_types: ['AI-80', 'AI-91', 'AI-95', 'Dizel'],
   is_open: true,
+  lat: 41.3653226,
+  lng: 69.2870051,
 };
 
 const MapPage = () => {
@@ -34,7 +37,12 @@ const MapPage = () => {
         .maybeSingle();
 
       if (!error && data) {
-        setStation(data);
+        setStation({
+          ...DEFAULT_STATION,
+          ...data,
+          lat: data.lat || DEFAULT_STATION.lat,
+          lng: data.lng || DEFAULT_STATION.lng,
+        });
       }
     } catch (err) {
       console.error('Station settings fetch error:', err);
@@ -59,54 +67,62 @@ const MapPage = () => {
     return () => supabase.removeChannel(channel);
   }, []);
 
+  // Yandex va Google Maps orqali Navigatsiyani ochish
+  const handleOpenNavigation = () => {
+    const lat = station.lat || 41.3653226;
+    const lng = station.lng || 69.2870051;
+    // Yandex Maps yo'l ko'rsatish
+    const yandexUrl = `https://yandex.com/maps/?rtext=~${lat},${lng}&rtt=auto`;
+    window.open(yandexUrl, '_blank');
+  };
+
+  const lat = station.lat || 41.3653226;
+  const lng = station.lng || 69.2870051;
+  const osmEmbedUrl = `https://www.openstreetmap.org/export/embed.html?bbox=${lng - 0.005}%2C${lat - 0.003}%2C${lng + 0.005}%2C${lat + 0.003}&layer=mapnik&marker=${lat}%2C${lng}`;
+
   return (
     <div className="flex-1 bg-gray-50 w-full font-sans flex flex-col pb-6">
 
-      {/* Xarita (demo) */}
-      <div className="relative mx-4 mt-5 rounded-2xl overflow-hidden" style={{ height: 220 }}>
-        {/* Gradient background map */}
-        <div
-          className="absolute inset-0"
-          style={{
-            background: 'linear-gradient(135deg, #c8e6c9 0%, #a5d6a7 40%, #66bb6a 100%)',
-          }}
+      {/* Real Interaktiv Xarita (OpenStreetMap Embed) */}
+      <div className="relative mx-4 mt-5 rounded-2xl overflow-hidden shadow-sm border border-gray-200" style={{ height: 230 }}>
+        <iframe
+          title="Stansiya joylashuvi"
+          width="100%"
+          height="100%"
+          frameBorder="0"
+          scrolling="no"
+          marginHeight="0"
+          marginWidth="0"
+          src={osmEmbedUrl}
+          className="w-full h-full"
         />
-        {/* Yo'l chiziqlari */}
-        <svg className="absolute inset-0 w-full h-full opacity-30">
-          <line x1="0" y1="90"  x2="100%" y2="90"  stroke="#2e7d32" strokeWidth="12"/>
-          <line x1="0" y1="160" x2="100%" y2="160" stroke="#2e7d32" strokeWidth="6"/>
-          <line x1="120" y1="0" x2="120" y2="100%" stroke="#2e7d32" strokeWidth="8"/>
-          <line x1="280" y1="0" x2="280" y2="100%" stroke="#2e7d32" strokeWidth="6"/>
-        </svg>
-        {/* Shaxobcha belgisi */}
-        <div className="absolute" style={{ left: '45%', top: '38%' }}>
-          <div className="w-12 h-12 bg-[#0f7b4c] rounded-full flex items-center justify-center border-3 border-white shadow-xl">
-            <BsFuelPump size={22} color="#fff" />
-          </div>
-          <div className="absolute -top-7 left-1/2 -translate-x-1/2 bg-white text-[#0f7b4c] font-bold text-[11px] px-2 py-0.5 rounded-full shadow whitespace-nowrap">
-            {station.name || 'Lukoil'}
-          </div>
+
+        {/* Xarita ustidagi markazi va sarlavhasi */}
+        <div className="absolute top-3 left-3 bg-white/90 backdrop-blur-md px-3 py-1.5 rounded-xl shadow border border-gray-100 flex items-center gap-1.5">
+          <BsFuelPump size={16} className="text-[#0f7b4c]" />
+          <span className="text-[12px] font-bold text-[#1a1a1a]">{station.name}</span>
         </div>
-        {/* Mening joylashuvim */}
-        <div className="absolute" style={{ left: '65%', top: '62%' }}>
-          <div className="w-4 h-4 bg-blue-500 rounded-full border-2 border-white shadow animate-pulse" />
-        </div>
-        <div className="absolute bottom-3 right-3 bg-white/80 backdrop-blur-sm rounded-full px-3 py-1 text-[11px] text-gray-500 font-medium">
-          Xarita (demo)
-        </div>
+
+        <button
+          onClick={handleOpenNavigation}
+          className="absolute bottom-3 right-3 bg-[#0f7b4c] text-white font-bold text-[11px] px-3 py-1.5 rounded-xl shadow flex items-center gap-1 active:scale-95 transition-all"
+        >
+          <IoMapOutline size={14} />
+          Xaritasida ochish
+        </button>
       </div>
 
       {/* Shaxobcha kartasi */}
-      <div className="mx-4 mt-4 bg-white rounded-2xl shadow-sm overflow-hidden">
-        {/* Yashil chiziq */}
+      <div className="mx-4 mt-4 bg-white rounded-2xl shadow-sm overflow-hidden border border-gray-100">
+        {/* Yashil/Qizil indikator chiziq */}
         <div className={`h-1.5 ${station.is_open ? 'bg-[#0f7b4c]' : 'bg-red-500'}`} />
         <div className="p-4">
           {/* Nomi va holati */}
           <div className="flex justify-between items-start mb-3">
             <div>
               <h3 className="font-extrabold text-[17px] text-[#1a1a1a]">{station.name}</h3>
-              <div className="flex items-center gap-1 mt-0.5 text-gray-400 text-[12px]">
-                <IoLocationOutline size={13} />
+              <div className="flex items-center gap-1 mt-0.5 text-gray-500 text-[12px]">
+                <IoLocationOutline size={14} className="text-[#0f7b4c]" />
                 <span>{station.address}</span>
               </div>
             </div>
@@ -141,7 +157,7 @@ const MapPage = () => {
               <p className="text-[12px] text-gray-500">Yoqilg'i turlari</p>
               <div className="flex flex-wrap gap-1 justify-end mt-1">
                 {(station.fuel_types || []).map(f => (
-                  <span key={f} className="bg-white text-gray-600 text-[11px] px-2 py-0.5 rounded-full border border-gray-200 font-medium">
+                  <span key={f} className="bg-white text-gray-700 text-[11px] px-2 py-0.5 rounded-full border border-gray-200 font-semibold shadow-2xs">
                     {f}
                   </span>
                 ))}
@@ -153,12 +169,15 @@ const MapPage = () => {
           <div className="flex gap-2">
             <a
               href={`tel:${station.phone}`}
-              className="flex-1 flex items-center justify-center gap-1.5 py-3 bg-gray-100 rounded-xl text-[14px] text-gray-700 font-semibold"
+              className="flex-1 flex items-center justify-center gap-1.5 py-3 bg-gray-100 rounded-xl text-[14px] text-gray-700 font-semibold active:scale-95 transition-all"
             >
               <IoCallOutline size={17} />
               Qo'ng'iroq
             </a>
-            <button className="flex-1 flex items-center justify-center gap-1.5 py-3 bg-[#0f7b4c] rounded-xl text-[14px] text-white font-semibold">
+            <button
+              onClick={handleOpenNavigation}
+              className="flex-1 flex items-center justify-center gap-1.5 py-3 bg-[#0f7b4c] rounded-xl text-[14px] text-white font-semibold active:scale-95 transition-all shadow-sm"
+            >
               <IoNavigateOutline size={17} />
               Yo'l ko'rsatish
             </button>

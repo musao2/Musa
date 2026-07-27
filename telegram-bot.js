@@ -11,7 +11,7 @@ const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
 
 let offset = 0;
 
-// Telegram API ga fetch orqali so'rov
+// ========== Telegram API ==========
 async function botRequest(method, data = {}) {
   try {
     const res = await fetch(`${API_BASE}/${method}`, {
@@ -21,7 +21,7 @@ async function botRequest(method, data = {}) {
     });
     const json = await res.json();
     if (!json.ok) {
-      console.error(`❌ Telegram API xatolik [${method}]:`, json.description);
+      console.error(`❌ Telegram API [${method}]:`, json.description);
     }
     return json;
   } catch (err) {
@@ -30,39 +30,36 @@ async function botRequest(method, data = {}) {
   }
 }
 
-// Kelgan xabarni qayta ishlash
+// ========== Telegram xabarlarni qayta ishlash ==========
 async function handleUpdate(update) {
   if (!update.message) return;
   const message = update.message;
   const chatId = message.chat.id;
 
-  console.log(`📩 Xabar keldi: chatId=${chatId}, text="${message.text || ''}", contact=${!!message.contact}`);
+  console.log(`📩 Xabar: chatId=${chatId}, text="${message.text || ''}", contact=${!!message.contact}`);
 
   // 1. Kontakt ulashilganda
   if (message.contact) {
     let phone = message.contact.phone_number;
-    if (!phone.startsWith('+')) {
-      phone = '+' + phone;
-    }
+    if (!phone.startsWith('+')) phone = '+' + phone;
 
-    console.log(`📞 Kontakt ulashildi: ${phone}`);
+    console.log(`📞 Kontakt: ${phone}`);
 
-    // Telefon raqamini va Chat ID'ni Supabase'ga yozish
     const { error } = await supabase
       .from('telegram_users')
       .upsert({ phone, chat_id: chatId.toString() });
 
     if (error) {
-      console.error('❌ DB yozish xatosi:', error.message);
+      console.error('❌ DB xatosi:', error.message);
       await botRequest('sendMessage', {
         chat_id: chatId,
-        text: '❌ Xatolik yuz berdi: ' + error.message
+        text: '❌ Xatolik: ' + error.message
       });
     } else {
-      console.log(`✅ Muvaffaqiyat: ${phone} -> ChatID: ${chatId}`);
+      console.log(`✅ Ulandi: ${phone} -> ${chatId}`);
       await botRequest('sendMessage', {
         chat_id: chatId,
-        text: `✅ Tabriklaymiz! Telefon raqamingiz muvaffaqiyatli ulandi: *${phone}*\n\nEndi KeshBak ilovasiga ushbu telefon raqam orqali kirishingiz mumkin.`,
+        text: `✅ Telefon raqamingiz muvaffaqiyatli ulandi: *${phone}*\n\nEndi KeshBak ilovasiga kirish uchun ushbu raqamni ishlating.`,
         parse_mode: 'Markdown',
         reply_markup: { remove_keyboard: true }
       });
@@ -70,12 +67,12 @@ async function handleUpdate(update) {
     return;
   }
 
-  // 2. /start buyrug'i kelganda
+  // 2. /start buyrug'i
   if (message.text && message.text.startsWith('/start')) {
-    console.log('🚀 /start buyrug\'i qabul qilindi');
-    const result = await botRequest('sendMessage', {
+    console.log('🚀 /start qabul qilindi');
+    await botRequest('sendMessage', {
       chat_id: chatId,
-      text: '👋 *KeshBak* tasdiqlash botiga xush kelibsiz!\n\nIlovaga kirish uchun quyidagi tugma orqali telefon raqamingizni ulashib tasdiqlang:',
+      text: '👋 *KeshBak* tasdiqlash botiga xush kelibsiz!\n\nIlovaga kirish uchun quyidagi tugma orqali telefon raqamingizni ulang:',
       parse_mode: 'Markdown',
       reply_markup: {
         keyboard: [[{
@@ -86,51 +83,113 @@ async function handleUpdate(update) {
         one_time_keyboard: true
       }
     });
-    console.log('📤 /start javobi:', result.ok ? 'muvaffaqiyatli' : 'xatolik');
   }
 }
 
-// Long polling
+// ========== Telegram Long Polling ==========
 async function pollUpdates() {
   try {
-    const res = await botRequest('getUpdates', { offset, timeout: 30 });
+    const res = await botRequest('getUpdates', { offset, timeout: 10 });
     if (res.ok && res.result && res.result.length > 0) {
       for (const update of res.result) {
         offset = update.update_id + 1;
         await handleUpdate(update);
       }
-    } else if (!res.ok) {
-      console.error('⚠️ getUpdates javob xato:', res.description || 'noma\'lum');
     }
   } catch (err) {
     console.error('❌ Polling xatosi:', err.message);
   }
-  setTimeout(pollUpdates, 1000);
+  setTimeout(pollUpdates, 500);
 }
 
-// Ishga tushirish — avval bot ma'lumotini tekshirish
+// ========== OTP Kodlarni Telegramga yuborish ==========
+async function checkPendingOTPs() {
+  try {
+    // status = 'pending' bo'lgan barcha kodlarni olish
+    const { data: pendingCodes, error } = await supabase
+      .from('otp_codes')
+      .select('*')
+      .eq('status', 'pending');
+
+    if (error) {
+      // Agar 'status' ustuni yo'q bo'lsa, xatolik beradi — uni e'tiborsiz qoldiramiz
+      return;
+    }
+
+    if (!pendingCodes || pendingCodes.length === 0) return;
+
+    for (const otp of pendingCodes) {
+      // Bu telefon raqamning chat_id sini topish
+      const { data: tgUser } = await supabase
+        .from('telegram_users')
+        .select('chat_id')
+        .eq('phone', otp.phone)
+        .maybeSingle();
+
+      if (!tgUser) {
+        console.log(`⚠️ Chat ID topilmadi: ${otp.phone}`);
+        // Status'ni 'no_chat' ga o'zgartirish
+        await supabase
+          .from('otp_codes')
+          .update({ status: 'no_chat' })
+          .eq('phone', otp.phone);
+        continue;
+      }
+
+      // Telegram orqali kod yuborish
+      const message = `🔐 KeshBak tasdiqlash kodi:\n\n📱 Raqam: ${otp.phone}\n🔑 Kod: *${otp.code}*\n\n⏰ Kod 5 daqiqa davomida amal qiladi.\n❗ Bu kodni hech kimga bermang!`;
+
+      const result = await botRequest('sendMessage', {
+        chat_id: tgUser.chat_id,
+        text: message,
+        parse_mode: 'Markdown',
+      });
+
+      if (result.ok) {
+        console.log(`📤 OTP yuborildi: ${otp.phone} -> kod: ${otp.code}`);
+        // Status'ni 'sent' ga o'zgartirish
+        await supabase
+          .from('otp_codes')
+          .update({ status: 'sent' })
+          .eq('phone', otp.phone);
+      } else {
+        console.error(`❌ OTP yuborilmadi: ${otp.phone}`);
+        await supabase
+          .from('otp_codes')
+          .update({ status: 'failed' })
+          .eq('phone', otp.phone);
+      }
+    }
+  } catch (err) {
+    // Silent — xatolik bo'lsa ham to'xtamasin
+  }
+  setTimeout(checkPendingOTPs, 1000); // Har 1 soniyada tekshirish
+}
+
+// ========== Ishga tushirish ==========
 async function start() {
-  console.log('🤖 Bot ishga tushmoqda...');
+  console.log('🤖 KeshBak Bot ishga tushmoqda...');
   
-  // Bot tokenini tekshirish
   const me = await botRequest('getMe');
   if (me.ok) {
-    console.log(`✅ Bot topildi: @${me.result.username} (${me.result.first_name})`);
+    console.log(`✅ Bot: @${me.result.username} (${me.result.first_name})`);
   } else {
-    console.error('❌ BOT TOKEN NOTO\'G\'RI! Tekshiring: ' + BOT_TOKEN.substring(0, 10) + '...');
+    console.error('❌ BOT TOKEN NOTO\'G\'RI!');
     return;
   }
 
-  // Eski xabarlarni tozalash (bot o'chirilgan vaqtdagi xabarlar)
-  console.log('🧹 Eski xabarlarni tozalash...');
+  // Eski xabarlarni tozalash
   const old = await botRequest('getUpdates', { offset: -1 });
   if (old.ok && old.result && old.result.length > 0) {
     offset = old.result[old.result.length - 1].update_id + 1;
-    console.log(`  → ${old.result.length} ta eski xabar o'tkazib yuborildi`);
   }
 
-  console.log('📡 Xabarlarni kutish boshlandi...');
-  pollUpdates();
+  console.log('📡 Telegram xabarlarni kutish...');
+  console.log('🔄 OTP kodlarni kuzatish...');
+
+  // Ikkita jarayonni parallel ishga tushirish
+  pollUpdates();       // Telegram xabarlarni tinglash
+  checkPendingOTPs();  // OTP kodlarni Telegramga yuborish
 }
 
 start();

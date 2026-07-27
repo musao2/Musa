@@ -73,6 +73,7 @@ const HomePage = () => {
       amount, 
       cashbackPercent: cashbackPercent, // Dinamik foizni yuboramiz
       type: scanType,
+      tokenId: tokenId,
       currentBalance: Number(profile?.cashback_balance || 0)
     });
 

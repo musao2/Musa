@@ -41,8 +41,37 @@ export const useTransactions = (userId) => {
   }, [userId]);
 
   // Yangi tranzaksiya qo'shish + balansni yangilash
-  const addTransaction = async ({ amount, cashbackPercent = 5, type = 'cashback', currentBalance = 0 }) => {
+  const addTransaction = async ({ amount, cashbackPercent = 5, type = 'cashback', tokenId = null, currentBalance = 0 }) => {
     if (!userId) return { error: 'Foydalanuvchi topilmadi' };
+
+    // 1. Agar QR Token ID bo'lsa, ishlatilinganligini va muddati o'tmaganligini tekshiramiz
+    if (tokenId) {
+      try {
+        const { data: tokenData, error: tokenError } = await supabase
+          .from('qr_tokens')
+          .select('*')
+          .eq('id', tokenId)
+          .maybeSingle();
+
+        if (tokenError) {
+          return { error: 'QR-kod holatini tekshirishda xatolik: ' + tokenError.message };
+        }
+
+        if (!tokenData) {
+          return { error: 'QR-kod topilmadi yoki yaroqsiz!' };
+        }
+
+        if (tokenData.used) {
+          return { error: 'Bu QR-kod allaqachon ishlatilingan! (Faqat 1 marta ishlaydi)' };
+        }
+
+        if (tokenData.expires_at && new Date(tokenData.expires_at) < new Date()) {
+          return { error: 'Bu QR-kodning amal qilish muddati tugagan!' };
+        }
+      } catch (err) {
+        console.error("Token tekshirishda xatolik:", err);
+      }
+    }
 
     let cashbackAmount = 0;
     if (type === 'withdraw') {
@@ -64,6 +93,18 @@ export const useTransactions = (userId) => {
       });
 
     if (txError) return { error: txError.message };
+
+    // Agar QR Token ID bo'lsa, qr_tokens jadvalida used = true qilamiz
+    if (tokenId) {
+      try {
+        await supabase
+          .from('qr_tokens')
+          .update({ used: true })
+          .eq('id', tokenId);
+      } catch (err) {
+        console.error("qr_tokens used yangilashda xatolik:", err);
+      }
+    }
 
     // Balansni yangilash (increment)
     const { error: balError } = await supabase.rpc('increment_balance', {

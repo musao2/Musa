@@ -168,7 +168,14 @@ const ProfilePage = () => {
           </div>
           <div>
             <h2 className="text-[20px] font-extrabold">{profile?.name || '—'}</h2>
-            <p className="text-white/80 text-[13px] font-medium">{profile?.phone || (user?.email ? '+' + user.email.split('_')[0].split('@')[0] : '')}</p>
+            <p className="text-white/80 text-[13px] font-medium">
+              {(() => {
+                const raw = profile?.phone || user?.phone || user?.email || '';
+                if (!raw) return '';
+                const cleanDigits = raw.split('_')[0].split('@')[0].replace('+', '');
+                return cleanDigits ? '+' + cleanDigits : '';
+              })()}
+            </p>
             <div className="flex items-center gap-1 mt-1 text-white/70 text-[12px]">
               <RiGasStationFill size={14} />
               <span>{station.name}</span>

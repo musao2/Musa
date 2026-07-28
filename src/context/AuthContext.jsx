@@ -9,14 +9,71 @@ export const AuthProvider = ({ children }) => {
   const [loading, setLoading] = useState(true);
 
   // Profil ma'lumotlarini yuklash
-  const loadProfile = async (userId) => {
-    const { data, error } = await supabase
+  const loadProfile = async (userId, userObj = null) => {
+    if (!userId) return;
+
+    // 1. ID bo'yicha profilni yuklash
+    let { data } = await supabase
       .from('profiles')
       .select('*')
       .eq('id', userId)
-      .single();
+      .maybeSingle();
 
-    if (!error && data) setProfile(data);
+    // 2. Agar ID bo'yicha topilmasa, telefon bo'yicha izlash
+    if (!data) {
+      const u = userObj || user;
+      let cleanPhone = null;
+      if (u?.phone) {
+        cleanPhone = u.phone;
+      } else if (u?.email) {
+        const phoneDigits = u.email.split('_')[0].split('@')[0].replace('+', '');
+        if (phoneDigits && /^\d+$/.test(phoneDigits)) {
+          cleanPhone = '+' + phoneDigits;
+        }
+      }
+
+      if (cleanPhone) {
+        const { data: phoneProfile } = await supabase
+          .from('profiles')
+          .select('*')
+          .eq('phone', cleanPhone)
+          .maybeSingle();
+
+        if (phoneProfile) {
+          data = phoneProfile;
+          try {
+            await supabase.from('profiles').update({ id: userId }).eq('phone', cleanPhone);
+          } catch (e) {}
+        } else {
+          const cardNumber = 'KB-' + new Date().getFullYear() + '-' + Math.floor(Math.random() * 9000 + 1000);
+          const { data: createdProfile } = await supabase
+            .from('profiles')
+            .insert({
+              id:               userId,
+              name:             'Mijoz',
+              phone:            cleanPhone,
+              card_number:      cardNumber,
+              cashback_balance: 0,
+              level:            'Standart',
+            })
+            .select('*')
+            .maybeSingle();
+
+          if (createdProfile) data = createdProfile;
+        }
+      }
+    }
+
+    // 3. Agarda profil bor-u, karta raqami bo'sh bo'lsa -> karta raqam yaratamiz
+    if (data && !data.card_number) {
+      const cardNumber = 'KB-' + new Date().getFullYear() + '-' + Math.floor(Math.random() * 9000 + 1000);
+      try {
+        await supabase.from('profiles').update({ card_number: cardNumber }).eq('id', data.id);
+        data.card_number = cardNumber;
+      } catch (e) {}
+    }
+
+    if (data) setProfile(data);
   };
 
   useEffect(() => {
@@ -58,7 +115,7 @@ export const AuthProvider = ({ children }) => {
       const u = session?.user ?? null;
       setUser(u);
       if (u) {
-        loadProfile(u.id);
+        loadProfile(u.id, u);
         setupProfileSubscription(u.id);
       }
       setLoading(false);
@@ -70,7 +127,7 @@ export const AuthProvider = ({ children }) => {
         const u = session?.user ?? null;
         setUser(u);
         if (u) {
-          await loadProfile(u.id);
+          await loadProfile(u.id, u);
           setupProfileSubscription(u.id);
         } else {
           setProfile(null);
@@ -201,8 +258,9 @@ export const AuthProvider = ({ children }) => {
       .eq('phone', cleanPhone)
       .maybeSingle();
 
+    const cardNumber = profileExists?.card_number || ('KB-' + new Date().getFullYear() + '-' + Math.floor(Math.random() * 9000 + 1000));
+
     if (!profileExists) {
-      const cardNumber = 'KB-' + new Date().getFullYear() + '-' + Math.floor(Math.random() * 9000 + 1000);
       await supabase.from('profiles').insert({
         id:               userId,
         name:             finalName || 'Mijoz',
@@ -212,21 +270,21 @@ export const AuthProvider = ({ children }) => {
         level:            'Standart',
       });
     } else {
-      // Agar mavjud profil nomi bo'sh yoki 'Mijoz' bo'lsa va bizda yangi ism bo'lsa -> yangilaymiz
       const hasNoName = !profileExists.name;
       const isDefaultName = profileExists.name === 'Mijoz';
 
-      const updateData = {};
+      const updateData = {
+        id: userId,
+        card_number: cardNumber,
+      };
       if (finalName && (hasNoName || isDefaultName)) {
         updateData.name = finalName;
       }
 
-      if (Object.keys(updateData).length > 0) {
-        await supabase.from('profiles').update(updateData).eq('phone', cleanPhone);
-      }
+      await supabase.from('profiles').update(updateData).eq('phone', cleanPhone);
     }
 
-    await loadProfile(userId);
+    await loadProfile(userId, { email, phone: cleanPhone });
     return { success: true };
   };
 

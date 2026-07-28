@@ -168,7 +168,7 @@ const ProfilePage = () => {
           </div>
           <div>
             <h2 className="text-[20px] font-extrabold">{profile?.name || '—'}</h2>
-            <p className="text-white/80 text-[13px] font-medium">{profile?.phone ?? user?.email}</p>
+            <p className="text-white/80 text-[13px] font-medium">{profile?.phone || (user?.email ? '+' + user.email.split('_')[0].split('@')[0] : '')}</p>
             <div className="flex items-center gap-1 mt-1 text-white/70 text-[12px]">
               <RiGasStationFill size={14} />
               <span>{station.name}</span>

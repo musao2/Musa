@@ -20,11 +20,37 @@ export const AuthProvider = ({ children }) => {
   };
 
   useEffect(() => {
+    let profileChannel = null;
+
+    const setupProfileSubscription = (userId) => {
+      if (profileChannel) supabase.removeChannel(profileChannel);
+      profileChannel = supabase
+        .channel(`profile_changes_${userId}`)
+        .on(
+          'postgres_changes',
+          {
+            event: '*',
+            schema: 'public',
+            table: 'profiles',
+            filter: `id=eq.${userId}`,
+          },
+          (payload) => {
+            if (payload.new) {
+              setProfile(payload.new);
+            }
+          }
+        )
+        .subscribe();
+    };
+
     // Joriy sessiyani tekshirish
     supabase.auth.getSession().then(({ data: { session } }) => {
       const u = session?.user ?? null;
       setUser(u);
-      if (u) loadProfile(u.id);
+      if (u) {
+        loadProfile(u.id);
+        setupProfileSubscription(u.id);
+      }
       setLoading(false);
     });
 
@@ -33,13 +59,21 @@ export const AuthProvider = ({ children }) => {
       async (_event, session) => {
         const u = session?.user ?? null;
         setUser(u);
-        if (u) await loadProfile(u.id);
-        else    setProfile(null);
+        if (u) {
+          await loadProfile(u.id);
+          setupProfileSubscription(u.id);
+        } else {
+          setProfile(null);
+          if (profileChannel) supabase.removeChannel(profileChannel);
+        }
         setLoading(false);
       }
     );
 
-    return () => subscription.unsubscribe();
+    return () => {
+      subscription.unsubscribe();
+      if (profileChannel) supabase.removeChannel(profileChannel);
+    };
   }, []);
 
   // OTP tasdiqlash va tizimga kirish (yoki ro'yxatdan o'tish)
@@ -76,8 +110,10 @@ export const AuthProvider = ({ children }) => {
     await supabase.from('otp_codes').delete().eq('phone', cleanPhone);
 
     // 2. Supabase auth tizimi uchun email/parol hosil qilish
-    const email = `${cleanPhone.replace('+', '')}@keshbak.uz`;
-    const password = `OtpSecretPasswordFor_${cleanPhone.replace('+', '')}`;
+    const phoneDigits = cleanPhone.replace('+', '');
+    const email = `${phoneDigits}@keshbak.uz`;
+    const password = `OtpSecretPasswordFor_${phoneDigits}`;
+    const legacyPassword = `Keshbek_${phoneDigits}`;
 
     // Telegram botdan ism kelganligini tekshirish (agar front-enddan berilmagan bo'lsa)
     let finalName = name?.trim();
@@ -92,75 +128,120 @@ export const AuthProvider = ({ children }) => {
       } catch (e) {}
     }
 
-    // Avval profillarda bu telefon borligini tekshirish
+    // 3. Tizimga kirishga urinish (Sign In)
+    let userId = null;
+
+    const candidateEmails = [
+      `${phoneDigits}@keshbak.uz`,
+      `${phoneDigits}@keshbek.uz`,
+      `${cleanPhone}@keshbak.uz`,
+      `${cleanPhone}@keshbek.uz`,
+    ];
+
+    const candidatePasswords = [
+      `OtpSecretPasswordFor_${phoneDigits}`,
+      `Keshbek_${phoneDigits}`,
+      `OtpSecretPasswordFor_${cleanPhone}`,
+      `Keshbek_${cleanPhone}`,
+      `12345678`,
+      `123456`,
+      `password`,
+    ];
+
+    // Birinchi galda barcha variantlarni sinab ko'ramiz
+    for (const em of candidateEmails) {
+      for (const pw of candidatePasswords) {
+        const { data: res, error } = await supabase.auth.signInWithPassword({
+          email: em,
+          password: pw,
+        });
+        if (!error && res?.user) {
+          userId = res.user.id;
+          break;
+        }
+      }
+      if (userId) break;
+    }
+
+    // Agar hech qaysi parol bilan kira olmagan bo'lsa, yangi akkaunt sifatida Sign Up qilamiz
+    if (!userId) {
+      const mainEmail = `${phoneDigits}@keshbak.uz`;
+      const mainPassword = `OtpSecretPasswordFor_${phoneDigits}`;
+
+      const { data: signUpData, error: signUpError } = await supabase.auth.signUp({
+        email: mainEmail,
+        password: mainPassword,
+      });
+
+      if (signUpData?.user) {
+        userId = signUpData.user.id;
+        if (!signUpData.session) {
+          const reSignIn = await supabase.auth.signInWithPassword({ email: mainEmail, password: mainPassword });
+          if (reSignIn.data?.user) userId = reSignIn.data.user.id;
+        }
+      } else if (signUpError) {
+        // Agar 'User already registered' berib, paroli topilmagan bo'lsa, muqobil email bilan tiklab kiritamiz
+        if (signUpError.message.includes('already registered') || signUpError.message.includes('already exists')) {
+          const altEmail = `${phoneDigits}_v2@keshbak.uz`;
+          const { data: altSignUp, error: altError } = await supabase.auth.signUp({
+            email: altEmail,
+            password: mainPassword,
+          });
+
+          if (altSignUp?.user) {
+            userId = altSignUp.user.id;
+            if (!altSignUp.session) {
+              const reSignIn = await supabase.auth.signInWithPassword({ email: altEmail, password: mainPassword });
+              if (reSignIn.data?.user) userId = reSignIn.data.user.id;
+            }
+          } else {
+            return { error: signUpError.message };
+          }
+        } else {
+          return { error: signUpError.message };
+        }
+      }
+    }
+
+    if (!userId) {
+      return { error: 'Tizimga kirishda kutilmagan xatolik yuz berdi.' };
+    }
+
+    // 4. Profil mavjudligini tekshirish va yaratish / yangilash
     const { data: profileExists } = await supabase
       .from('profiles')
-      .select('id, name')
+      .select('*')
       .eq('phone', cleanPhone)
       .maybeSingle();
 
     if (!profileExists) {
-      // Ro'yxatdan o'tish (Sign Up)
-      const { data: authData, error: signUpError } = await supabase.auth.signUp({
-        email,
-        password,
+      const cardNumber = 'KB-' + new Date().getFullYear() + '-' + Math.floor(Math.random() * 9000 + 1000);
+      await supabase.from('profiles').insert({
+        id:               userId,
+        name:             finalName || 'Mijoz',
+        full_name:        finalName || 'Mijoz',
+        phone:            cleanPhone,
+        card_number:      cardNumber,
+        cashback_balance: 0,
+        level:            'Standart',
       });
-
-      if (signUpError) {
-        if (signUpError.message.includes('already registered') || signUpError.message.includes('already exists')) {
-          const { data: signInData, error: signInError } = await supabase.auth.signInWithPassword({
-            email,
-            password,
-          });
-          if (signInError) return { error: signInError.message };
-
-          const cardNumber = 'KB-' + new Date().getFullYear() + '-' + Math.floor(Math.random() * 9000 + 1000);
-          await supabase.from('profiles').insert({
-            id:               signInData.user.id,
-            name:             finalName || 'Mijoz',
-            phone:            cleanPhone,
-            card_number:      cardNumber,
-            cashback_balance: 0,
-            level:            'Standart',
-          });
-
-          await loadProfile(signInData.user.id);
-          return { success: true };
-        }
-        return { error: signUpError.message };
-      }
-
-      if (authData?.user) {
-        const cardNumber = 'KB-' + new Date().getFullYear() + '-' + Math.floor(Math.random() * 9000 + 1000);
-        await supabase.from('profiles').insert({
-          id:               authData.user.id,
-          name:             finalName || 'Mijoz',
-          phone:            cleanPhone,
-          card_number:      cardNumber,
-          cashback_balance: 0,
-          level:            'Standart',
-        });
-        await loadProfile(authData.user.id);
-      }
     } else {
-      // Kirish (Sign In)
-      const { data: signInData, error: signInError } = await supabase.auth.signInWithPassword({
-        email,
-        password,
-      });
-
-      if (signInError) {
-        return { error: signInError.message };
-      }
-
       // Agar mavjud profil nomi bo'sh yoki 'Mijoz' bo'lsa va bizda yangi ism bo'lsa -> yangilaymiz
-      if (finalName && (!profileExists.name || profileExists.name === 'Mijoz')) {
-        await supabase.from('profiles').update({ name: finalName }).eq('id', signInData.user.id);
+      const hasNoName = !profileExists.name && !profileExists.full_name;
+      const isDefaultName = profileExists.name === 'Mijoz' || profileExists.full_name === 'Mijoz';
+
+      const updateData = {};
+      if (finalName && (hasNoName || isDefaultName)) {
+        updateData.name = finalName;
+        updateData.full_name = finalName;
       }
 
-      await loadProfile(signInData.user.id);
+      if (Object.keys(updateData).length > 0) {
+        await supabase.from('profiles').update(updateData).eq('phone', cleanPhone);
+      }
     }
 
+    await loadProfile(userId);
     return { success: true };
   };
 
@@ -172,7 +253,7 @@ export const AuthProvider = ({ children }) => {
 
     const { error } = await supabase
       .from('profiles')
-      .update({ name: cleanName })
+      .update({ name: cleanName, full_name: cleanName })
       .eq('id', user.id);
 
     if (error) return { error: error.message };

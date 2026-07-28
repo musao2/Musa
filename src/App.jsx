@@ -21,7 +21,8 @@ const AppContent = () => {
   const [nameError, setNameError]         = useState('');
   const [savingName, setSavingName]       = useState(false);
 
-  const isNameMissing = profile && (!profile.name || profile.name.trim() === '' || profile.name === 'Mijoz');
+  const userDisplayName = profile?.full_name || profile?.name;
+  const isNameMissing = profile && (!userDisplayName || userDisplayName.trim() === '' || userDisplayName === 'Mijoz' || userDisplayName === 'Noma\'lum Mijoz');
 
   const handleSaveMandatoryName = async (e) => {
     e.preventDefault();

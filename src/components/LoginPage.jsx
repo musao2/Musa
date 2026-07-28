@@ -1,11 +1,13 @@
 import React, { useState } from 'react';
 import { useAuth } from '../context/AuthContext';
+import { useStationSettings } from '../hooks/useStationSettings';
 import { sendOTPViaTelegram } from '../lib/telegramBot';
 import { BsFuelPump } from 'react-icons/bs';
 import { IoPhonePortraitOutline, IoPersonOutline, IoKeyOutline, IoArrowBackOutline, IoPaperPlaneOutline } from 'react-icons/io5';
 
 const LoginPage = () => {
   const { verifyOTPAndLogin } = useAuth();
+  const { station } = useStationSettings();
 
   const [mode, setMode]       = useState('login'); // 'login' | 'register'
   const [step, setStep]       = useState(1);       // 1: Telefon kiritish, 2: Kod kiritish
@@ -83,7 +85,7 @@ const LoginPage = () => {
           <BsFuelPump size={32} className="text-white" />
         </div>
         <h1 className="text-[28px] font-extrabold text-white tracking-tight">KeshBak</h1>
-        <p className="text-white/60 text-[13px] mt-1">Lukoil — Yunusobod</p>
+        <p className="text-white/60 text-[13px] mt-1">{station?.name || 'Yuklanmoqda...'}</p>
       </div>
 
       {/* Forma kartasi */}

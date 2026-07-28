@@ -140,47 +140,52 @@ export const AuthProvider = ({ children }) => {
       } catch (e) {}
     }
 
-    // 3. Tizimga kirishga urinish (Telefon raqamining o'zi bilan)
+    // 3. Tizimga kirishga urinish (Supabase Auth)
     let userId = null;
+    const email = `${phoneDigits}@keshbak.uz`;
 
-    // 1-qadam: Telefon raqami va parol orqali kirish (Phone Sign In)
+    // 1-qadam: Kirish (Sign In)
     let { data: signInData, error: signInError } = await supabase.auth.signInWithPassword({
-      phone: cleanPhone,
-      password: password,
+      email,
+      password,
     });
 
     if (!signInError && signInData?.user) {
       userId = signInData.user.id;
     } else {
-      // 2-qadam: Agar kirib bo'lmasa, telefon raqami bilan ro'yxatdan o'tkazish (Phone Sign Up)
-      const { data: signUpData, error: signUpError } = await supabase.auth.signUp({
-        phone: cleanPhone,
-        password: password,
+      // 2-qadam: Ro'yxatdan o'tish (Sign Up)
+      let { data: signUpData, error: signUpError } = await supabase.auth.signUp({
+        email,
+        password,
       });
 
       if (signUpData?.user) {
         userId = signUpData.user.id;
         if (!signUpData.session) {
-          const reSignIn = await supabase.auth.signInWithPassword({ phone: cleanPhone, password: password });
+          const reSignIn = await supabase.auth.signInWithPassword({ email, password });
           if (reSignIn.data?.user) userId = reSignIn.data.user.id;
         }
-      } else {
-        // Zaxira: Agar Supabase loyihangizda Phone Provider o'chirilgan bo'lsa, avtomatik email shakliga o'tkazamiz
-        const email = `${phoneDigits}@keshbak.uz`;
-        const emailSignIn = await supabase.auth.signInWithPassword({ email, password });
-        if (!emailSignIn.error && emailSignIn.data?.user) {
-          userId = emailSignIn.data.user.id;
-        } else {
-          const emailSignUp = await supabase.auth.signUp({ email, password });
-          if (emailSignUp.data?.user) {
-            userId = emailSignUp.data.user.id;
-            if (!emailSignUp.session) {
-              const reSignIn = await supabase.auth.signInWithPassword({ email, password });
+      } else if (signUpError) {
+        // Agar ushbu email allaqachon ro'yxatdan o'tgan bo'lsa (User already registered), muqobil akkaunt bilan bog'laymiz
+        if (signUpError.message.includes('already registered') || signUpError.message.includes('already exists')) {
+          const altEmail = `${phoneDigits}_v2@keshbak.uz`;
+          const altSignUp = await supabase.auth.signUp({ email: altEmail, password });
+          if (altSignUp.data?.user) {
+            userId = altSignUp.data.user.id;
+            if (!altSignUp.session) {
+              const reSignIn = await supabase.auth.signInWithPassword({ email: altEmail, password });
               if (reSignIn.data?.user) userId = reSignIn.data.user.id;
             }
-          } else if (signUpError) {
-            return { error: signUpError.message };
+          } else {
+            const altSignIn = await supabase.auth.signInWithPassword({ email: altEmail, password });
+            if (altSignIn.data?.user) {
+              userId = altSignIn.data.user.id;
+            } else {
+              return { error: 'Tizimga kirishda xatolik yuz berdi. Qayta urinib ko\'ring.' };
+            }
           }
+        } else {
+          return { error: signUpError.message };
         }
       }
     }

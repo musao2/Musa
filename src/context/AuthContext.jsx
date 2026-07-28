@@ -21,11 +21,19 @@ export const AuthProvider = ({ children }) => {
 
   useEffect(() => {
     let profileChannel = null;
+    let currentSubscribedUserId = null;
 
     const setupProfileSubscription = (userId) => {
-      if (profileChannel) supabase.removeChannel(profileChannel);
-      profileChannel = supabase
-        .channel(`profile_changes_${userId}`)
+      if (!userId || currentSubscribedUserId === userId) return;
+
+      if (profileChannel) {
+        supabase.removeChannel(profileChannel);
+        profileChannel = null;
+      }
+
+      currentSubscribedUserId = userId;
+      const channel = supabase
+        .channel(`profile_changes_${userId}_${Date.now()}`)
         .on(
           'postgres_changes',
           {
@@ -39,8 +47,10 @@ export const AuthProvider = ({ children }) => {
               setProfile(payload.new);
             }
           }
-        )
-        .subscribe();
+        );
+
+      channel.subscribe();
+      profileChannel = channel;
     };
 
     // Joriy sessiyani tekshirish
@@ -64,7 +74,11 @@ export const AuthProvider = ({ children }) => {
           setupProfileSubscription(u.id);
         } else {
           setProfile(null);
-          if (profileChannel) supabase.removeChannel(profileChannel);
+          currentSubscribedUserId = null;
+          if (profileChannel) {
+            supabase.removeChannel(profileChannel);
+            profileChannel = null;
+          }
         }
         setLoading(false);
       }
@@ -109,11 +123,9 @@ export const AuthProvider = ({ children }) => {
     // Ishlatilgan kodni o'chirib tashlaymiz
     await supabase.from('otp_codes').delete().eq('phone', cleanPhone);
 
-    // 2. Supabase auth tizimi uchun email/parol hosil qilish
+    // 2. Supabase auth tizimi uchun telefon raqam va parol
     const phoneDigits = cleanPhone.replace('+', '');
-    const email = `${phoneDigits}@keshbak.uz`;
     const password = `OtpSecretPasswordFor_${phoneDigits}`;
-    const legacyPassword = `Keshbek_${phoneDigits}`;
 
     // Telegram botdan ism kelganligini tekshirish (agar front-enddan berilmagan bo'lsa)
     let finalName = name?.trim();
@@ -128,77 +140,47 @@ export const AuthProvider = ({ children }) => {
       } catch (e) {}
     }
 
-    // 3. Tizimga kirishga urinish (Sign In)
+    // 3. Tizimga kirishga urinish (Telefon raqamining o'zi bilan)
     let userId = null;
 
-    const candidateEmails = [
-      `${phoneDigits}@keshbak.uz`,
-      `${phoneDigits}@keshbek.uz`,
-      `${cleanPhone}@keshbak.uz`,
-      `${cleanPhone}@keshbek.uz`,
-    ];
+    // 1-qadam: Telefon raqami va parol orqali kirish (Phone Sign In)
+    let { data: signInData, error: signInError } = await supabase.auth.signInWithPassword({
+      phone: cleanPhone,
+      password: password,
+    });
 
-    const candidatePasswords = [
-      `OtpSecretPasswordFor_${phoneDigits}`,
-      `Keshbek_${phoneDigits}`,
-      `OtpSecretPasswordFor_${cleanPhone}`,
-      `Keshbek_${cleanPhone}`,
-      `12345678`,
-      `123456`,
-      `password`,
-    ];
-
-    // Birinchi galda barcha variantlarni sinab ko'ramiz
-    for (const em of candidateEmails) {
-      for (const pw of candidatePasswords) {
-        const { data: res, error } = await supabase.auth.signInWithPassword({
-          email: em,
-          password: pw,
-        });
-        if (!error && res?.user) {
-          userId = res.user.id;
-          break;
-        }
-      }
-      if (userId) break;
-    }
-
-    // Agar hech qaysi parol bilan kira olmagan bo'lsa, yangi akkaunt sifatida Sign Up qilamiz
-    if (!userId) {
-      const mainEmail = `${phoneDigits}@keshbak.uz`;
-      const mainPassword = `OtpSecretPasswordFor_${phoneDigits}`;
-
+    if (!signInError && signInData?.user) {
+      userId = signInData.user.id;
+    } else {
+      // 2-qadam: Agar kirib bo'lmasa, telefon raqami bilan ro'yxatdan o'tkazish (Phone Sign Up)
       const { data: signUpData, error: signUpError } = await supabase.auth.signUp({
-        email: mainEmail,
-        password: mainPassword,
+        phone: cleanPhone,
+        password: password,
       });
 
       if (signUpData?.user) {
         userId = signUpData.user.id;
         if (!signUpData.session) {
-          const reSignIn = await supabase.auth.signInWithPassword({ email: mainEmail, password: mainPassword });
+          const reSignIn = await supabase.auth.signInWithPassword({ phone: cleanPhone, password: password });
           if (reSignIn.data?.user) userId = reSignIn.data.user.id;
         }
-      } else if (signUpError) {
-        // Agar 'User already registered' berib, paroli topilmagan bo'lsa, muqobil email bilan tiklab kiritamiz
-        if (signUpError.message.includes('already registered') || signUpError.message.includes('already exists')) {
-          const altEmail = `${phoneDigits}_v2@keshbak.uz`;
-          const { data: altSignUp, error: altError } = await supabase.auth.signUp({
-            email: altEmail,
-            password: mainPassword,
-          });
-
-          if (altSignUp?.user) {
-            userId = altSignUp.user.id;
-            if (!altSignUp.session) {
-              const reSignIn = await supabase.auth.signInWithPassword({ email: altEmail, password: mainPassword });
+      } else {
+        // Zaxira: Agar Supabase loyihangizda Phone Provider o'chirilgan bo'lsa, avtomatik email shakliga o'tkazamiz
+        const email = `${phoneDigits}@keshbak.uz`;
+        const emailSignIn = await supabase.auth.signInWithPassword({ email, password });
+        if (!emailSignIn.error && emailSignIn.data?.user) {
+          userId = emailSignIn.data.user.id;
+        } else {
+          const emailSignUp = await supabase.auth.signUp({ email, password });
+          if (emailSignUp.data?.user) {
+            userId = emailSignUp.data.user.id;
+            if (!emailSignUp.session) {
+              const reSignIn = await supabase.auth.signInWithPassword({ email, password });
               if (reSignIn.data?.user) userId = reSignIn.data.user.id;
             }
-          } else {
+          } else if (signUpError) {
             return { error: signUpError.message };
           }
-        } else {
-          return { error: signUpError.message };
         }
       }
     }

@@ -68,7 +68,7 @@ async function handleUpdate(update) {
       try {
         await supabase
           .from('profiles')
-          .update({ name: fullName, full_name: fullName })
+          .update({ name: fullName })
           .eq('phone', phone);
       } catch (e) {}
     }

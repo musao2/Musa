@@ -91,7 +91,7 @@ const HomePage = () => {
         {/* Salomlashuv */}
         <p className="text-gray-500 text-[13px] mb-0.5">Xush kelibsiz,</p>
         <h2 className="text-[20px] font-extrabold text-[#1a1a1a] mb-5">
-          {profile?.full_name || profile?.name || 'Foydalanuvchi'}
+          {profile?.name || 'Foydalanuvchi'}
         </h2>
 
         {/* Scan xabari */}

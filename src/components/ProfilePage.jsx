@@ -167,7 +167,7 @@ const ProfilePage = () => {
             <HiUserCircle size={48} className="text-white" />
           </div>
           <div>
-            <h2 className="text-[20px] font-extrabold">{profile?.full_name || profile?.name || '—'}</h2>
+            <h2 className="text-[20px] font-extrabold">{profile?.name || '—'}</h2>
             <p className="text-white/80 text-[13px] font-medium">{profile?.phone ?? user?.email}</p>
             <div className="flex items-center gap-1 mt-1 text-white/70 text-[12px]">
               <RiGasStationFill size={14} />

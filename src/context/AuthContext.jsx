@@ -201,7 +201,6 @@ export const AuthProvider = ({ children }) => {
       await supabase.from('profiles').insert({
         id:               userId,
         name:             finalName || 'Mijoz',
-        full_name:        finalName || 'Mijoz',
         phone:            cleanPhone,
         card_number:      cardNumber,
         cashback_balance: 0,
@@ -209,13 +208,12 @@ export const AuthProvider = ({ children }) => {
       });
     } else {
       // Agar mavjud profil nomi bo'sh yoki 'Mijoz' bo'lsa va bizda yangi ism bo'lsa -> yangilaymiz
-      const hasNoName = !profileExists.name && !profileExists.full_name;
-      const isDefaultName = profileExists.name === 'Mijoz' || profileExists.full_name === 'Mijoz';
+      const hasNoName = !profileExists.name;
+      const isDefaultName = profileExists.name === 'Mijoz';
 
       const updateData = {};
       if (finalName && (hasNoName || isDefaultName)) {
         updateData.name = finalName;
-        updateData.full_name = finalName;
       }
 
       if (Object.keys(updateData).length > 0) {
@@ -235,7 +233,7 @@ export const AuthProvider = ({ children }) => {
 
     const { error } = await supabase
       .from('profiles')
-      .update({ name: cleanName, full_name: cleanName })
+      .update({ name: cleanName })
       .eq('id', user.id);
 
     if (error) return { error: error.message };

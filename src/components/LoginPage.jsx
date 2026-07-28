@@ -37,7 +37,7 @@ const LoginPage = () => {
       return;
     }
 
-    if (mode === 'register' && !name.trim()) {
+    if (!name.trim()) {
       setError('Iltimos, ism familiyangizni kiriting.');
       return;
     }
@@ -110,20 +110,18 @@ const LoginPage = () => {
         {step === 1 && (
           <form onSubmit={handleSendCode} className="flex flex-col gap-4">
             
-            {/* Ism (faqat register bo'lganda) */}
-            {mode === 'register' && (
-              <div className="relative">
-                <IoPersonOutline size={18} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400" />
-                <input
-                  type="text"
-                  placeholder="Ism familiya"
-                  value={name}
-                  onChange={e => setName(e.target.value)}
-                  required
-                  className="w-full h-12 pl-10 pr-4 bg-gray-50 border border-gray-200 rounded-xl text-[14px] text-gray-800 outline-none focus:border-[#0f7b4c] transition-colors"
-                />
-              </div>
-            )}
+            {/* Ism (Har doim ko'rsatiladi) */}
+            <div className="relative">
+              <IoPersonOutline size={18} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400" />
+              <input
+                type="text"
+                placeholder="Ism va familiyangiz"
+                value={name}
+                onChange={e => setName(e.target.value)}
+                required
+                className="w-full h-12 pl-10 pr-4 bg-gray-50 border border-gray-200 rounded-xl text-[14px] text-gray-800 outline-none focus:border-[#0f7b4c] transition-colors"
+              />
+            </div>
 
             {/* Telefon raqam */}
             <div className="relative">

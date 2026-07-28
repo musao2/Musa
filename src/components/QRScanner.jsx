@@ -1,17 +1,18 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { IoClose } from 'react-icons/io5';
 import { BsXCircle, BsCheckCircleFill } from 'react-icons/bs';
+import jsQR from 'jsqr';
 
 const QRScanner = ({ onClose, onScan }) => {
-  const videoRef  = useRef(null);
-  const canvasRef = useRef(null);
-  const streamRef = useRef(null);
-  const rafRef    = useRef(null);
+  const videoRef    = useRef(null);
+  const canvasRef   = useRef(null);
+  const streamRef   = useRef(null);
+  const rafRef      = useRef(null);
   const detectorRef = useRef(null);
 
-  const [status, setStatus] = useState('loading'); // loading | scanning | success | error
-  const [result, setResult] = useState('');
-  const [errorMsg, setErrorMsg] = useState('');
+  const [status, setStatus]       = useState('loading'); // loading | scanning | success | error
+  const [result, setResult]       = useState('');
+  const [errorMsg, setErrorMsg]   = useState('');
   const [scanLineY, setScanLineY] = useState(0);
 
   /* ---------- Skanerlash chizig'i animatsiyasi ---------- */
@@ -27,85 +28,126 @@ const QRScanner = ({ onClose, onScan }) => {
     return () => clearInterval(id);
   }, []);
 
-  /* ---------- Kamera va BarcodeDetector ---------- */
+  /* ---------- Universal Kamera va QR Dekoder (JSQR + BarcodeDetector) ---------- */
   useEffect(() => {
     let stopped = false;
 
     const startCamera = async () => {
       try {
-        // BarcodeDetector API tekshirish
-        if (!('BarcodeDetector' in window)) {
-          setStatus('error');
-          setErrorMsg(
-            'Brauzeringiz QR skanerini qo\'llab-quvvatlamaydi.\n' +
-            'Iltimos, Chrome yoki Edge brauzerini ishlating.'
-          );
+        // Native BarcodeDetector (agar brauzerda bor bo'lsa)
+        if ('BarcodeDetector' in window) {
+          try {
+            detectorRef.current = new window.BarcodeDetector({ formats: ['qr_code'] });
+          } catch (e) {
+            detectorRef.current = null;
+          }
+        }
+
+        // Barcha mobil va desktop brauzerlar uchun kamera ruxsatini olish
+        let stream = null;
+        try {
+          stream = await navigator.mediaDevices.getUserMedia({
+            video: { facingMode: { ideal: 'environment' }, width: { ideal: 1280 }, height: { ideal: 720 } }
+          });
+        } catch (e1) {
+          try {
+            stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
+          } catch (e2) {
+            stream = await navigator.mediaDevices.getUserMedia({ video: true });
+          }
+        }
+
+        if (stopped) {
+          if (stream) stream.getTracks().forEach(t => t.stop());
           return;
         }
 
-        detectorRef.current = new window.BarcodeDetector({
-          formats: ['qr_code'],
-        });
-
-        const stream = await navigator.mediaDevices.getUserMedia({
-          video: { facingMode: 'environment', width: { ideal: 1280 }, height: { ideal: 720 } },
-        });
-
-        if (stopped) { stream.getTracks().forEach(t => t.stop()); return; }
-
         streamRef.current = stream;
+
         if (videoRef.current) {
           videoRef.current.srcObject = stream;
-          videoRef.current.play();
+          videoRef.current.setAttribute('playsinline', 'true');
+          videoRef.current.setAttribute('muted', 'true');
+          await videoRef.current.play();
         }
+
         setStatus('scanning');
         scanFrame();
       } catch (err) {
         if (stopped) return;
-        if (err.name === 'NotAllowedError') {
+        if (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError') {
           setStatus('error');
-          setErrorMsg('Kameraga ruxsat berilmadi.\nBrauzer sozlamalaridan ruxsat bering.');
+          setErrorMsg('Kameraga ruxsat berilmadi.\nIltimos, brauzeringiz sozlamalaridan kameraga ruxsat bering.');
         } else {
           setStatus('error');
-          setErrorMsg('Kamera ochilmadi: ' + err.message);
+          setErrorMsg('Kamera ochilmadi: ' + (err.message || 'Xatolik yuz berdi'));
         }
       }
     };
 
-    const scanFrame = () => {
-      if (stopped || !videoRef.current || !canvasRef.current || !detectorRef.current) return;
+    const scanFrame = async () => {
+      if (stopped || !videoRef.current || !canvasRef.current) return;
       const video  = videoRef.current;
       const canvas = canvasRef.current;
 
-      if (video.readyState !== video.HAVE_ENOUGH_DATA) {
+      if (video.readyState < 2 || video.videoWidth === 0) {
         rafRef.current = requestAnimationFrame(scanFrame);
         return;
       }
 
       canvas.width  = video.videoWidth;
       canvas.height = video.videoHeight;
-      canvas.getContext('2d').drawImage(video, 0, 0);
+      const ctx = canvas.getContext('2d');
+      if (!ctx) {
+        rafRef.current = requestAnimationFrame(scanFrame);
+        return;
+      }
 
-      detectorRef.current.detect(canvas).then(barcodes => {
-        if (stopped) return;
-        if (barcodes.length > 0) {
-          const text = barcodes[0].rawValue;
-          setResult(text);
-          setStatus('success');
-          stopCamera();
-          if (onScan) onScan(text);
-        } else {
-          rafRef.current = requestAnimationFrame(scanFrame);
-        }
-      }).catch(() => {
-        if (!stopped) rafRef.current = requestAnimationFrame(scanFrame);
-      });
+      ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+      let foundText = null;
+
+      // 1. Native BarcodeDetector tekshirish (Tezkor)
+      if (detectorRef.current) {
+        try {
+          const barcodes = await detectorRef.current.detect(canvas);
+          if (barcodes.length > 0) {
+            foundText = barcodes[0].rawValue;
+          }
+        } catch (e) {}
+      }
+
+      // 2. jsQR orqali dekod qilish (iOS Safari, Mobile Firefox, Telegram WebApp universal fallback)
+      if (!foundText) {
+        try {
+          const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+          const code = jsQR(imageData.data, imageData.width, imageData.height, {
+            inversionAttempts: 'dontInvert',
+          });
+          if (code && code.data) {
+            foundText = code.data;
+          }
+        } catch (e) {}
+      }
+
+      if (stopped) return;
+
+      if (foundText) {
+        setResult(foundText);
+        setStatus('success');
+        stopCamera();
+        if (onScan) onScan(foundText);
+      } else {
+        rafRef.current = requestAnimationFrame(scanFrame);
+      }
     };
 
     const stopCamera = () => {
       stopped = true;
       if (rafRef.current) cancelAnimationFrame(rafRef.current);
-      if (streamRef.current) streamRef.current.getTracks().forEach(t => t.stop());
+      if (streamRef.current) {
+        streamRef.current.getTracks().forEach(t => t.stop());
+      }
     };
 
     startCamera();
@@ -113,7 +155,9 @@ const QRScanner = ({ onClose, onScan }) => {
     return () => {
       stopped = true;
       if (rafRef.current) cancelAnimationFrame(rafRef.current);
-      if (streamRef.current) streamRef.current.getTracks().forEach(t => t.stop());
+      if (streamRef.current) {
+        streamRef.current.getTracks().forEach(t => t.stop());
+      }
     };
   }, [onScan]);
 
@@ -129,7 +173,7 @@ const QRScanner = ({ onClose, onScan }) => {
         className="absolute inset-0 w-full h-full object-cover"
         style={{ opacity: status === 'scanning' ? 1 : 0 }}
       />
-      {/* BarcodeDetector uchun ko'rinmas canvas */}
+      {/* QR dekodlash uchun ko'rinmas canvas */}
       <canvas ref={canvasRef} className="hidden" />
 
       {/* Qoraytirilgan overlay */}

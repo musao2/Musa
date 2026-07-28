@@ -46,11 +46,32 @@ async function handleUpdate(update) {
     let phone = message.contact.phone_number;
     if (!phone.startsWith('+')) phone = '+' + phone;
 
-    console.log(`📞 Kontakt: ${phone}`);
+    const firstName = message.contact.first_name || message.from?.first_name || '';
+    const lastName  = message.contact.last_name || message.from?.last_name || '';
+    const fullName  = [firstName, lastName].filter(Boolean).join(' ').trim();
 
-    const { error } = await supabase
+    console.log(`📞 Kontakt: ${phone}, Ism: ${fullName}`);
+
+    let { error } = await supabase
       .from('telegram_users')
-      .upsert({ phone, chat_id: chatId.toString() });
+      .upsert({ phone, chat_id: chatId.toString(), name: fullName || undefined });
+
+    if (error) {
+      const fallback = await supabase
+        .from('telegram_users')
+        .upsert({ phone, chat_id: chatId.toString() });
+      error = fallback.error;
+    }
+
+    // Profiles jadvalidagi ismni ham yangilab qo'yish
+    if (fullName) {
+      try {
+        await supabase
+          .from('profiles')
+          .update({ name: fullName })
+          .eq('phone', phone);
+      } catch (e) {}
+    }
 
     if (error) {
       console.error('❌ DB xatosi:', error.message);

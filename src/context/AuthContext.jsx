@@ -79,10 +79,23 @@ export const AuthProvider = ({ children }) => {
     const email = `${cleanPhone.replace('+', '')}@keshbak.uz`;
     const password = `OtpSecretPasswordFor_${cleanPhone.replace('+', '')}`;
 
+    // Telegram botdan ism kelganligini tekshirish (agar front-enddan berilmagan bo'lsa)
+    let finalName = name?.trim();
+    if (!finalName) {
+      try {
+        const { data: tgUser } = await supabase
+          .from('telegram_users')
+          .select('name')
+          .eq('phone', cleanPhone)
+          .maybeSingle();
+        if (tgUser?.name) finalName = tgUser.name;
+      } catch (e) {}
+    }
+
     // Avval profillarda bu telefon borligini tekshirish
     const { data: profileExists } = await supabase
       .from('profiles')
-      .select('id')
+      .select('id, name')
       .eq('phone', cleanPhone)
       .maybeSingle();
 
@@ -94,7 +107,6 @@ export const AuthProvider = ({ children }) => {
       });
 
       if (signUpError) {
-        // Agar authda bor bo'lsa, lekin profilesda bo'lmasa, shunchaki kirib profil yaratamiz
         if (signUpError.message.includes('already registered') || signUpError.message.includes('already exists')) {
           const { data: signInData, error: signInError } = await supabase.auth.signInWithPassword({
             email,
@@ -105,7 +117,7 @@ export const AuthProvider = ({ children }) => {
           const cardNumber = 'KB-' + new Date().getFullYear() + '-' + Math.floor(Math.random() * 9000 + 1000);
           await supabase.from('profiles').insert({
             id:               signInData.user.id,
-            name:             name || 'Mijoz',
+            name:             finalName || 'Mijoz',
             phone:            cleanPhone,
             card_number:      cardNumber,
             cashback_balance: 0,
@@ -122,7 +134,7 @@ export const AuthProvider = ({ children }) => {
         const cardNumber = 'KB-' + new Date().getFullYear() + '-' + Math.floor(Math.random() * 9000 + 1000);
         await supabase.from('profiles').insert({
           id:               authData.user.id,
-          name:             name || 'Mijoz',
+          name:             finalName || 'Mijoz',
           phone:            cleanPhone,
           card_number:      cardNumber,
           cashback_balance: 0,
@@ -140,9 +152,31 @@ export const AuthProvider = ({ children }) => {
       if (signInError) {
         return { error: signInError.message };
       }
+
+      // Agar mavjud profil nomi bo'sh yoki 'Mijoz' bo'lsa va bizda yangi ism bo'lsa -> yangilaymiz
+      if (finalName && (!profileExists.name || profileExists.name === 'Mijoz')) {
+        await supabase.from('profiles').update({ name: finalName }).eq('id', signInData.user.id);
+      }
+
       await loadProfile(signInData.user.id);
     }
 
+    return { success: true };
+  };
+
+  // Profil ismini yangilash
+  const updateProfileName = async (newName) => {
+    if (!user) return { error: 'Tizimga kirmagansiz' };
+    const cleanName = newName.trim();
+    if (!cleanName) return { error: 'Ism bo\'sh bo\'lishi mumkin emas' };
+
+    const { error } = await supabase
+      .from('profiles')
+      .update({ name: cleanName })
+      .eq('id', user.id);
+
+    if (error) return { error: error.message };
+    await loadProfile(user.id);
     return { success: true };
   };
 
@@ -157,7 +191,7 @@ export const AuthProvider = ({ children }) => {
   };
 
   return (
-    <AuthContext.Provider value={{ user, profile, loading, verifyOTPAndLogin, signOut, refreshProfile }}>
+    <AuthContext.Provider value={{ user, profile, loading, verifyOTPAndLogin, updateProfileName, signOut, refreshProfile }}>
       {children}
     </AuthContext.Provider>
   );

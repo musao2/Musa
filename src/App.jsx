@@ -12,9 +12,32 @@ import { IoNotificationsOutline, IoClose } from 'react-icons/io5';
 import { BsFuelPump } from 'react-icons/bs';
 
 const AppContent = () => {
-  const { user, loading, refreshProfile } = useAuth();
+  const { user, profile, loading, refreshProfile, updateProfileName } = useAuth();
   const [activeTab, setActiveTab] = useState('home');
   const [pushNotification, setPushNotification] = useState(null);
+  
+  // Majburiy ism so'rash state'lari
+  const [mandatoryName, setMandatoryName] = useState('');
+  const [nameError, setNameError]         = useState('');
+  const [savingName, setSavingName]       = useState(false);
+
+  const isNameMissing = profile && (!profile.name || profile.name.trim() === '' || profile.name === 'Mijoz');
+
+  const handleSaveMandatoryName = async (e) => {
+    e.preventDefault();
+    if (!mandatoryName.trim()) {
+      setNameError('Iltimos, ism va familiyangizni kiriting!');
+      return;
+    }
+    setSavingName(true);
+    const res = await updateProfileName(mandatoryName.trim());
+    setSavingName(false);
+    if (res?.error) {
+      setNameError(res.error);
+    } else {
+      setNameError('');
+    }
+  };
 
   // Global real-time tranzaksiyalar bildirishnomasi
   useEffect(() => {
@@ -32,14 +55,11 @@ const AppContent = () => {
         const amt = Number(tx.amount).toLocaleString('uz-UZ') + " so'm";
         const cb = Number(Math.abs(tx.cashback_amount)).toLocaleString('uz-UZ') + " so'm";
 
-        // Bildirishnomalar yoqilganini tekshirish
         const isPushEnabled = localStorage.getItem('push_enabled') !== 'false';
         if (!isPushEnabled) return;
 
-        // Profil balansini yangilash
         refreshProfile();
 
-        // In-app Push xabarnoma tuzish
         const notifData = tx.cashback_amount < 0 
           ? {
               title: "Keshbek yechib olindi 💳",
@@ -54,7 +74,6 @@ const AppContent = () => {
 
         setPushNotification(notifData);
 
-        // Web Notification API (tizim push xabarnomasi)
         if (Notification.permission === 'granted') {
           new Notification(notifData.title, {
             body: notifData.body,
@@ -62,12 +81,10 @@ const AppContent = () => {
           });
         }
 
-        // 4 soniyadan keyin o'chirish
         setTimeout(() => setPushNotification(null), 4500);
       })
       .subscribe();
 
-    // Brauzerdan push ruxsatini so'rash
     if ('Notification' in window && Notification.permission === 'default') {
       Notification.requestPermission();
     }
@@ -103,6 +120,42 @@ const AppContent = () => {
   return (
     <div className="relative min-h-screen bg-gray-50 flex flex-col font-sans overflow-x-hidden">
       
+      {/* MAJBURIS ISM KIRITISH MODALI */}
+      {isNameMissing && (
+        <div className="fixed inset-0 z-[9999] bg-black/80 backdrop-blur-md flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl p-6 w-full max-w-sm shadow-2xl flex flex-col items-center text-center animate-scale-up">
+            <div className="w-14 h-14 bg-[#0f7b4c]/10 text-[#0f7b4c] rounded-2xl flex items-center justify-center mb-3">
+              <span className="text-2xl font-bold">👤</span>
+            </div>
+            <h2 className="text-xl font-extrabold text-gray-900">Ismingizni kiriting</h2>
+            <p className="text-gray-500 text-[13px] mt-1.5 mb-5 leading-relaxed">
+              KeshBak xizmatidan to'liq foydalanish va keshbeklarni olish uchun ismingizni kiritishingiz shart.
+            </p>
+            <form onSubmit={handleSaveMandatoryName} className="w-full flex flex-col gap-3">
+              <input
+                type="text"
+                placeholder="Ism va familiyangiz"
+                value={mandatoryName}
+                onChange={e => setMandatoryName(e.target.value)}
+                required
+                autoFocus
+                className="w-full h-12 px-4 bg-gray-50 border border-gray-200 rounded-xl text-[14px] outline-none focus:border-[#0f7b4c] text-center font-bold text-gray-800 transition-colors"
+              />
+              {nameError && (
+                <p className="text-red-500 text-[12px] font-medium">{nameError}</p>
+              )}
+              <button
+                type="submit"
+                disabled={savingName}
+                className="w-full h-12 bg-[#0f7b4c] text-white font-bold rounded-xl text-[15px] active:scale-95 transition-all disabled:opacity-60 shadow-lg shadow-[#0f7b4c]/20"
+              >
+                {savingName ? 'Saqlanmoqda...' : 'Saqlash va Davom etish'}
+              </button>
+            </form>
+          </div>
+        </div>
+      )}
+
       {/* GLOBAL NATIVE IN-APP PUSH NOTIFICATION */}
       {pushNotification && (
         <div className="fixed top-4 left-4 right-4 z-[999] bg-white/95 backdrop-blur-md rounded-2xl p-4 shadow-xl border border-gray-100 flex items-start gap-3 animate-slide-down">

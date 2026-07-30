@@ -26,7 +26,8 @@ export const sendOTPViaTelegram = async (phone) => {
 
     if (!tgUser) {
       return { 
-        error: 'Bu raqam Telegram botda ro\'yxatdan o\'tmagan. Iltimos, Telegram\'da @kechbakbot ga kirib /start bosing va telefon raqamingizni ulang.' 
+        notRegistered: true,
+        error: 'Ushbu raqam Telegram botda ro\'yxatdan o\'tmagan. Kod olish uchun avval Telegram botimizga kirib /start bosing va telefon raqamingizni ulang.' 
       };
     }
 

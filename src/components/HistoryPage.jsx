@@ -35,7 +35,7 @@ const formatDate = (iso) => {
 };
 
 const HistoryPage = () => {
-  const { user } = useAuth();
+  const { user, profile } = useAuth();
   const { transactions, loading } = useTransactions(user?.id);
   const { station }                = useStationSettings();
   const [activeTab, setActiveTab] = useState('ALL'); // 'ALL' | 'KIRIM' | 'CHIQIM'
@@ -50,8 +50,8 @@ const HistoryPage = () => {
   );
 
   const totalKirim = kirimTransactions.reduce((s, t) => s + Number(t.cashback_amount || 0), 0);
-  const totalChiqim = chiqimTransactions.reduce((s, t) => s + Math.abs(Number(t.cashback_amount || t.amount || 0)), 0);
-  const netBalance = totalKirim - totalChiqim;
+  const totalChiqim = chiqimTransactions.reduce((s, t) => s + Math.abs(Number(t.cashback_amount || 0)), 0);
+  const currentCashbackBalance = profile?.cashback_balance ?? Math.max(0, totalKirim - totalChiqim);
 
   // Saralanayotgan ro'yxat
   const filteredList = transactions.filter((t) => {
@@ -81,7 +81,7 @@ const HistoryPage = () => {
           </div>
 
           <h2 className="text-3xl font-black leading-none my-3 tracking-tight">
-            {formatSum(netBalance >= 0 ? netBalance : 0)}
+            {formatSum(currentCashbackBalance)}
           </h2>
 
           {/* Kirim va Chiqim statistikasi */}

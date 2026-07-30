@@ -13,7 +13,9 @@ import {
   HiKey,
   HiFingerPrint,
   HiCalendarDays,
-  HiReceiptPercent
+  HiReceiptPercent,
+  HiLockClosed,
+  HiPaperAirplane
 } from 'react-icons/hi2';
 import { RiGasStationFill } from 'react-icons/ri';
 import { FaCrown, FaTrophy, FaMedal, FaShieldHalved } from 'react-icons/fa6';
@@ -282,8 +284,8 @@ const ProfilePage = () => {
               <HiShieldCheck size={20} />
             </div>
             <div className="flex-1">
-              <p className="font-bold text-[14px] text-[#1a1a1a]">Xavfsizlik</p>
-              <p className="text-gray-400 text-[12px]">Parol va biometrik sozlamalar</p>
+              <p className="font-bold text-[14px] text-[#1a1a1a]">Akkaunt Xavfsizligi</p>
+              <p className="text-gray-400 text-[12px]">Telegram ulanishi va hisob himoyasi</p>
             </div>
             <HiChevronRight size={17} className="text-gray-300" />
           </button>
@@ -330,7 +332,7 @@ const ProfilePage = () => {
 
       {/* ----------------- MODALLAR (Security / Notifications) ----------------- */}
 
-      {/* XAVFSIZLIK MODALI */}
+      {/* AKKAUNT XAVFSIZLIGI MODALI */}
       {activeModal === 'security' && (
         <div className="fixed inset-0 z-[100] bg-black/65 backdrop-blur-sm flex items-center justify-center p-4">
           <div className="bg-white rounded-3xl w-full max-w-sm p-6 shadow-2xl relative">
@@ -341,68 +343,48 @@ const ProfilePage = () => {
               <HiXMark size={24} />
             </button>
             <h3 className="text-[17px] font-bold text-[#1a1a1a] mb-5 flex items-center gap-2">
-              <HiShieldCheck className="text-[#0f7b4c]" size={20} />
-              Xavfsizlik sozlamalari
+              <HiShieldCheck className="text-[#0f7b4c]" size={22} />
+              Akkaunt Xavfsizligi
             </h3>
 
-            {/* Biometrika simulator */}
-            <div className="flex items-center justify-between bg-gray-50 border border-gray-100 rounded-2xl p-4 mb-6">
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 bg-white rounded-xl flex items-center justify-center text-[#0f7b4c] border border-gray-200">
-                  <HiFingerPrint size={22} />
+            <div className="flex flex-col gap-4">
+              {/* Telegram raqami va status */}
+              <div className="bg-gray-50 border border-gray-100 rounded-2xl p-4 flex flex-col gap-2">
+                <div className="flex items-center justify-between">
+                  <span className="text-[12px] font-semibold text-gray-400">Ulangan Telefon Raqam</span>
+                  <span className="text-[11px] font-bold text-[#0f7b4c] bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-100">
+                    Ulangan 🟢
+                  </span>
+                </div>
+                <p className="font-extrabold text-[16px] text-gray-900">
+                  {profile?.phone || '—'}
+                </p>
+              </div>
+
+              {/* Telegram OTP himoyasi info */}
+              <div className="bg-[#f0f7f4] border border-[#0f7b4c]/20 rounded-2xl p-4 flex items-start gap-3">
+                <div className="w-8 h-8 rounded-xl bg-[#0f7b4c]/10 text-[#0f7b4c] flex items-center justify-center shrink-0 mt-0.5">
+                  <HiLockClosed size={18} />
                 </div>
                 <div>
-                  <p className="font-bold text-[14px] text-[#1a1a1a]">Biometrik himoya</p>
-                  <p className="text-gray-400 text-[12px]">Face ID / Touch ID</p>
+                  <p className="font-bold text-[13px] text-gray-900">Telegram OTP Himoyasi</p>
+                  <p className="text-gray-600 text-[12px] mt-0.5 leading-relaxed">
+                    Sizning hisobingiz parolsiz, Telegram Bot orqali 4 xonali bir martalik kod (OTP) bilan to'liq himoyalangan.
+                  </p>
                 </div>
               </div>
-              <button
-                onClick={toggleBiometrics}
-                className={`w-12 h-6.5 rounded-full p-0.5 transition-colors duration-200 focus:outline-none ${
-                  biometricsEnabled ? 'bg-[#0f7b4c]' : 'bg-gray-300'
-                }`}
-              >
-                <div className={`w-5.5 h-5.5 rounded-full bg-white shadow-md transform transition-transform duration-200 ${
-                  biometricsEnabled ? 'translate-x-5.5' : 'translate-x-0'
-                }`} />
-              </button>
-            </div>
 
-            {/* Parolni yangilash */}
-            <form onSubmit={handlePasswordChange} className="flex flex-col gap-3">
-              <h4 className="text-[12px] font-bold text-gray-400 uppercase tracking-wider px-1">Parolni o'zgartirish</h4>
-              <div className="relative">
-                <HiKey className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
-                <input
-                  type="password"
-                  placeholder="Yangi parol"
-                  value={newPassword}
-                  onChange={(e) => setNewPassword(e.target.value)}
-                  required
-                  minLength={6}
-                  className="w-full h-12 pl-10 pr-4 bg-gray-50 border border-gray-200 rounded-xl text-[14px] text-gray-900 outline-none focus:border-[#0f7b4c]"
-                />
-              </div>
-              <div className="relative">
-                <HiKey className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
-                <input
-                  type="password"
-                  placeholder="Parolni tasdiqlang"
-                  value={confirmPassword}
-                  onChange={(e) => setConfirmPassword(e.target.value)}
-                  required
-                  minLength={6}
-                  className="w-full h-12 pl-10 pr-4 bg-gray-50 border border-gray-200 rounded-xl text-[14px] text-gray-900 outline-none focus:border-[#0f7b4c]"
-                />
-              </div>
-              <button
-                type="submit"
-                disabled={loading}
-                className="w-full h-12 bg-[#0f7b4c] text-white font-bold text-[14px] rounded-xl flex items-center justify-center gap-2 mt-2 active:scale-95 transition-all shadow-sm"
+              {/* Bot link */}
+              <a
+                href="https://t.me/kechbakbot"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="w-full h-12 bg-[#0088cc] hover:bg-[#0077b5] text-white font-bold rounded-xl text-[13px] flex items-center justify-center gap-2 transition-all shadow-md shadow-[#0088cc]/20 active:scale-95 mt-1"
               >
-                {loading ? 'Yangilanmoqda...' : 'Saqlash'}
-              </button>
-            </form>
+                <HiPaperAirplane size={16} />
+                @kechbakbot botiga o'tish
+              </a>
+            </div>
           </div>
         </div>
       )}

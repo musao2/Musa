@@ -5,7 +5,6 @@ import { useAuth } from '../context/AuthContext';
 import { useTransactions } from '../hooks/useTransactions';
 import { useStationSettings } from '../hooks/useStationSettings';
 import QRScanner from './QRScanner';
-import PostPaymentReviewModal from './PostPaymentReviewModal';
 
 // So'm formatini chiroyli ko'rsatish
 const formatSum = (n) =>
@@ -28,15 +27,13 @@ const HomePage = () => {
   const { station } = useStationSettings();
   const [showScanner, setShowScanner] = useState(false);
   const [scanMsg, setScanMsg] = useState('');
-  
-  // To'lovdan so'ng chiqadigan Sharh Modali state-i
-  const [showReviewModal, setShowReviewModal] = useState(false);
 
   const recentTx = transactions.slice(0, 3);
 
   const handleScan = async (qrData) => {
     setShowScanner(false);
 
+    // QR dan summa va keshbek foizini to'g'ri ajratish
     let amount = 100000;
     let tokenId = '';
     let scanType = 'cashback';
@@ -60,9 +57,10 @@ const HomePage = () => {
       return;
     }
 
+    // Tranzaksiyani yuborish
     const { cashbackAmount, error } = await addTransaction({
       amount,
-      cashbackPercent: cashbackPercent,
+      cashbackPercent: cashbackPercent, // Dinamik foizni yuboramiz
       type: scanType,
       tokenId: tokenId,
       currentBalance: Number(profile?.cashback_balance || 0)
@@ -77,11 +75,6 @@ const HomePage = () => {
         setScanMsg(`✅ +${formatSum(cashbackAmount)} keshbek yig'ildi! (${cashbackPercent}%)`);
       }
       await refreshProfile();
-
-      // TO'LOV MUVAFFAQIYATLI BAJARILGACH DARHOL SHARH VA YULDUZLI BAHO MODALINI OCHAMIZ
-      setTimeout(() => {
-        setShowReviewModal(true);
-      }, 1000);
     }
 
     setTimeout(() => setScanMsg(''), 3500);
@@ -92,12 +85,6 @@ const HomePage = () => {
       {showScanner && (
         <QRScanner onClose={() => setShowScanner(false)} onScan={handleScan} />
       )}
-
-      {/* TO'LOVDAN SO'NG CHI QADIGAN SHARH VA YULDUZLI BAHO MODALI */}
-      <PostPaymentReviewModal
-        isOpen={showReviewModal}
-        onClose={() => setShowReviewModal(false)}
-      />
 
       <div className="flex-1 px-4 pt-6 bg-gray-50 pb-6 w-full font-sans">
 
@@ -111,9 +98,11 @@ const HomePage = () => {
 
         {/* Balans kartasi */}
         <div className="bg-gradient-to-br from-[#0c613c] via-[#0f7b4c] to-[#14965d] rounded-3xl p-5 text-white mb-5 shadow-xl shadow-[#0f7b4c]/20 relative overflow-hidden border border-white/10">
+          {/* Decorative background glows */}
           <div className="absolute -right-6 -bottom-6 w-32 h-32 bg-white/10 rounded-full blur-xl pointer-events-none" />
           <div className="absolute -left-6 -top-6 w-24 h-24 bg-emerald-400/20 rounded-full blur-lg pointer-events-none" />
 
+          {/* User greeting header inside card */}
           <div className="pb-3 mb-3.5 border-b border-white/15 relative z-10">
             <h2 className="text-[16px] text-white font-extrabold leading-tight flex items-center gap-1.5 flex-wrap">
               <span className="text-emerald-200/90 font-medium">Xush kelibsiz,</span>
@@ -122,18 +111,20 @@ const HomePage = () => {
             </h2>
           </div>
 
+          {/* Balance info */}
           <div className="relative z-10">
             <p className="text-emerald-100/75 text-[12px] font-medium mb-1">Keshbek balansi</p>
             <h3 className="text-[34px] font-black leading-none mb-4 tracking-tight">
               {formatSum(profile?.cashback_balance)}
             </h3>
 
+            {/* Bottom badge and station */}
             <div className="flex items-center justify-between pt-1">
               <div className="flex items-center gap-1.5 bg-white/15 backdrop-blur-md px-3 py-1.5 rounded-full text-[12px] font-bold text-emerald-50 border border-white/15">
                 <HiSparkles size={14} className="text-amber-300" />
                 <span>{station.cashback_percent}% keshbek</span>
               </div>
-              <div className="flex items-center gap-1.5 text-white/80 text-[12px] font-medium">
+              <div className="flex items-center gap-1.5 text-[#e8f5e9] text-[12px] font-medium">
                 <RiGasStationFill size={15} />
                 <span>{station.name}</span>
               </div>
@@ -159,57 +150,46 @@ const HomePage = () => {
             <RiGasStationFill size={22} />
           </div>
           <div>
-            <h4 className="font-extrabold text-[15px] text-[#4a2e12]">Har bir to'lovda keshbek!</h4>
-            <p className="text-[12px] text-[#784d24] mt-0.5 leading-snug">
-              Har bir quyishda {station.cashback_percent}% keshbek yig'ing va keyingi to'lovlarda ishlating.
+            <p className="text-[#965b20] font-bold text-[13px]">Keshbek {station.cashback_percent}%</p>
+            <p className="text-[#1a1a1a] font-bold text-[14px] leading-snug">
+              Har to'lovdan {station.cashback_percent}% keshbek yig'asiz
             </p>
           </div>
         </div>
 
-        {/* Oxirgi amallar */}
-        <div>
-          <div className="flex justify-between items-center mb-3">
-            <h4 className="font-extrabold text-[16px] text-gray-900">Oxirgi amallar</h4>
-          </div>
-
-          {recentTx.length === 0 ? (
-            <div className="bg-white rounded-2xl p-6 text-center text-gray-400 text-[13px] border border-gray-100">
-              Hozircha amallar yo'q
-            </div>
-          ) : (
-            <div className="space-y-2.5">
-              {recentTx.map((tx) => {
-                const isWithdraw = Number(tx.cashback_amount) < 0;
-                const amt = isWithdraw ? Math.abs(Number(tx.cashback_amount)) : Number(tx.cashback_amount);
-
-                return (
-                  <div
-                    key={tx.id}
-                    className="bg-white rounded-2xl p-3.5 flex items-center justify-between border border-gray-100 shadow-2xs"
-                  >
-                    <div className="flex items-center gap-3">
-                      <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${isWithdraw ? 'bg-red-50 text-red-500' : 'bg-[#e8f5e9] text-[#0f7b4c]'
-                        }`}>
-                        {isWithdraw ? <HiGift size={20} /> : <HiSparkles size={20} />}
-                      </div>
-                      <div>
-                        <p className="font-bold text-[14px] text-gray-800">
-                          {isWithdraw ? "Keshbek yechildi" : "Keshbek yig'ildi"}
-                        </p>
-                        <p className="text-[11px] text-gray-400">{formatDate(tx.created_at)}</p>
-                      </div>
-                    </div>
-                    <span className={`font-extrabold text-[15px] ${isWithdraw ? 'text-red-500' : 'text-[#0f7b4c]'
-                      }`}>
-                      {isWithdraw ? '-' : '+'}{formatSum(amt)}
-                    </span>
-                  </div>
-                );
-              })}
-            </div>
-          )}
+        {/* Oxirgi tranzaksiyalar */}
+        <div className="flex justify-between items-center mb-3">
+          <h3 className="text-[15px] font-semibold text-[#1a1a1a]">Oxirgi to'lovlar</h3>
+          <span className="text-[13px] text-[#0f7b4c] font-medium">
+            {transactions.length} ta jami
+          </span>
         </div>
 
+        {recentTx.length === 0 ? (
+          <div className="bg-white rounded-2xl p-6 text-center text-gray-400 text-[14px] border border-gray-100">
+            Hali to'lovlar yo'q. QR skanerlang!
+          </div>
+        ) : (
+          <div className="flex flex-col gap-3">
+            {recentTx.map((item) => (
+              <div key={item.id} className="bg-white rounded-2xl p-4 flex items-center justify-between shadow-sm border border-gray-100">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 bg-[#f0f7f4] rounded-xl flex items-center justify-center text-[#0f7b4c]">
+                    <RiGasStationFill size={20} />
+                  </div>
+                  <div>
+                    <p className="font-bold text-[14px] text-[#1a1a1a]">{item.station_name || station.name}</p>
+                    <p className="text-gray-400 text-[12px]">{formatDate(item.created_at)}</p>
+                  </div>
+                </div>
+                <div className="text-right">
+                  <p className="font-bold text-[14px] text-[#1a1a1a]">- {formatSum(item.amount)}</p>
+                  <p className="text-[#0f7b4c] text-[13px] font-semibold">+ {formatSum(item.cashback_amount)}</p>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
     </>
   );

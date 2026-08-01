@@ -1,17 +1,16 @@
 import React, { useState } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { useStationSettings } from '../hooks/useStationSettings';
-import { sendOTPViaTelegram } from '../lib/telegramBot';
+import { sendOTPViaTelegram as sendOTP } from '../lib/telegramBot';
 import { BsFuelPump } from 'react-icons/bs';
-import { IoPhonePortraitOutline, IoKeyOutline, IoArrowBackOutline, IoPaperPlaneOutline } from 'react-icons/io5';
+import { IoPhonePortraitOutline, IoKeyOutline, IoArrowBackOutline, IoPersonOutline, IoSendOutline } from 'react-icons/io5';
 
 const LoginPage = () => {
   const { verifyOTPAndLogin } = useAuth();
   const { station } = useStationSettings();
 
-  const [mode, setMode]               = useState('login'); // 'login' | 'register'
-  const [step, setStep]               = useState(1);       // 1: Telefon kiritish, 2: Kod kiritish
-  const [isNotRegistered, setIsNotRegistered] = useState(false);
+  const [mode, setMode]       = useState('login'); // 'login' | 'register'
+  const [step, setStep]       = useState(1);       // 1: Telefon/Ism kiritish, 2: Kod kiritish
   
   const [phone, setPhone]     = useState('+998');
   const [name, setName]       = useState('');
@@ -20,13 +19,13 @@ const LoginPage = () => {
   const [error, setError]     = useState('');
   const [loading, setLoading] = useState(false);
 
-  // Telefon raqamini chiroyli formatlash va 9 ta raqam bilan cheklash (+998 90 123 45 67)
+  // Telefon raqamini chiroyli formatlash (+998 90 123 45 67)
   const handlePhoneChange = (inputVal) => {
     let digits = inputVal.replace(/\D/g, '');
     if (digits.startsWith('998')) {
       digits = digits.slice(3);
     }
-    digits = digits.slice(0, 9); // ko'pi bilan 9 xonali operator raqami
+    digits = digits.slice(0, 9);
 
     let formatted = '+998';
     if (digits.length > 0) {
@@ -45,7 +44,6 @@ const LoginPage = () => {
     setPhone(formatted);
     if (error) {
       setError('');
-      setIsNotRegistered(false);
     }
   };
 
@@ -58,11 +56,10 @@ const LoginPage = () => {
     return true;
   };
 
-  // 1-qadam: Telegramga kod yuborish
+  // 1-qadam: Kod yuborish
   const handleSendCode = async (e) => {
     e.preventDefault();
     setError('');
-    setIsNotRegistered(false);
 
     const cleanPhone = '+' + phone.replace(/\D/g, '');
     if (!validatePhone(cleanPhone)) {
@@ -70,15 +67,17 @@ const LoginPage = () => {
       return;
     }
 
+    if (mode === 'register' && !name.trim()) {
+      setError('Iltimos, ismingizni kiriting.');
+      return;
+    }
+
     setLoading(true);
-    const res = await sendOTPViaTelegram(cleanPhone);
+    const res = await sendOTP(cleanPhone);
     setLoading(false);
 
     if (res.error) {
       setError(res.error);
-      if (res.notRegistered || res.error.includes('Telegram')) {
-        setIsNotRegistered(true);
-      }
     } else {
       setStep(2);
       setError('');
@@ -124,7 +123,7 @@ const LoginPage = () => {
         {step === 1 && (
           <div className="flex bg-gray-100 rounded-2xl p-1 mb-5">
             <button
-              onClick={() => { setMode('login'); setError(''); setIsNotRegistered(false); }}
+              onClick={() => { setMode('login'); setError(''); }}
               className={`flex-1 py-2.5 rounded-xl text-[14px] font-bold transition-all ${
                 mode === 'login' ? 'bg-white text-[#0f7b4c] shadow-sm scale-[1.02]' : 'text-gray-400 hover:text-gray-600'
               }`}
@@ -132,7 +131,7 @@ const LoginPage = () => {
               Kirish
             </button>
             <button
-              onClick={() => { setMode('register'); setError(''); setIsNotRegistered(false); }}
+              onClick={() => { setMode('register'); setError(''); }}
               className={`flex-1 py-2.5 rounded-xl text-[14px] font-bold transition-all ${
                 mode === 'register' ? 'bg-white text-[#0f7b4c] shadow-sm scale-[1.02]' : 'text-gray-400 hover:text-gray-600'
               }`}
@@ -142,10 +141,24 @@ const LoginPage = () => {
           </div>
         )}
 
-        {/* KIRISH MODE */}
-        {mode === 'login' && step === 1 && (
+        {/* 1-QADAM: TELEFON VA ISMI */}
+        {step === 1 && (
           <form onSubmit={handleSendCode} className="flex flex-col gap-4">
             
+            {mode === 'register' && (
+              <div className="relative">
+                <IoPersonOutline size={18} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400" />
+                <input
+                  type="text"
+                  placeholder="Ismingiz va familiyangiz"
+                  value={name}
+                  onChange={e => setName(e.target.value)}
+                  required
+                  className="w-full h-12 pl-10 pr-4 bg-gray-50 border border-gray-200 rounded-xl text-[14px] font-semibold text-gray-800 outline-none focus:border-[#0f7b4c] transition-colors"
+                />
+              </div>
+            )}
+
             <div className="relative">
               <IoPhonePortraitOutline size={18} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400" />
               <input
@@ -160,32 +173,9 @@ const LoginPage = () => {
             </div>
 
             {error && (
-              isNotRegistered ? (
-                <div className="bg-[#f0f7f4] border border-[#0f7b4c]/30 rounded-2xl p-4 flex flex-col gap-3 text-left">
-                  <div className="flex items-start gap-2.5">
-                    <div className="w-8 h-8 rounded-full bg-[#0088cc]/10 text-[#0088cc] flex items-center justify-center shrink-0 mt-0.5">
-                      <IoPaperPlaneOutline size={18} />
-                    </div>
-                    <div>
-                      <p className="text-gray-900 text-[13px] font-extrabold">Telegram botda ulash shart</p>
-                      <p className="text-gray-600 text-[12px] mt-0.5 leading-relaxed">{error}</p>
-                    </div>
-                  </div>
-                  <a
-                    href="https://t.me/kechbakbot"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="w-full h-11 bg-[#0088cc] hover:bg-[#0077b5] text-white font-bold rounded-xl text-[13px] flex items-center justify-center gap-2 transition-all shadow-md shadow-[#0088cc]/20 active:scale-95"
-                  >
-                    <IoPaperPlaneOutline size={16} />
-                    @kechbakbot ga o'tish (/start)
-                  </a>
-                </div>
-              ) : (
-                <div className="bg-red-50 border border-red-100 rounded-xl px-4 py-2.5 text-red-500 text-[12px] font-medium leading-snug">
-                  {error}
-                </div>
-              )
+              <div className="bg-red-50 border border-red-100 rounded-xl px-4 py-2.5 text-red-500 text-[12px] font-medium leading-snug">
+                {error}
+              </div>
             )}
 
             <button
@@ -197,54 +187,33 @@ const LoginPage = () => {
                 <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
               ) : (
                 <>
-                  <IoPaperPlaneOutline size={18} />
+                  <IoSendOutline size={18} />
                   Kod yuborish
                 </>
               )}
             </button>
 
-            <button
-              type="button"
-              onClick={() => setMode('register')}
-              className="text-[#0f7b4c] text-[12px] font-bold hover:underline text-center mt-1"
-            >
-              Hali ro'yxatdan o'tmaganmisiz? Telegram bot orqali ulaning ➔
-            </button>
+            {mode === 'login' ? (
+              <button
+                type="button"
+                onClick={() => setMode('register')}
+                className="text-[#0f7b4c] text-[12px] font-bold hover:underline text-center mt-1"
+              >
+                Hali ro'yxatdan o'tmaganmisiz? Ro'yxatdan o'tish ➔
+              </button>
+            ) : (
+              <button
+                type="button"
+                onClick={() => setMode('login')}
+                className="text-[#0f7b4c] text-[12px] font-bold hover:underline text-center mt-1"
+              >
+                Ro'yxatdan o'tganmisiz? Kirish ➔
+              </button>
+            )}
           </form>
         )}
 
-        {/* RO'YXATDAN O'TISH MODE */}
-        {mode === 'register' && step === 1 && (
-          <div className="flex flex-col items-center text-center py-2">
-            <div className="w-14 h-14 bg-[#0088cc]/10 text-[#0088cc] rounded-2xl flex items-center justify-center mb-3">
-              <IoPaperPlaneOutline size={28} />
-            </div>
-            <h3 className="text-lg font-extrabold text-gray-900 mb-1">Telegram Bot orqali ro'yxatdan o'ting</h3>
-            <p className="text-gray-500 text-[13px] leading-relaxed mb-5">
-              KeshBak xizmatidan foydalanish uchun Telegram botimizga kiring, <span className="font-bold text-gray-800">/start</span> bosing va telefon raqamingizni ulang.
-            </p>
-
-            <a
-              href="https://t.me/kechbakbot"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="w-full h-12 bg-[#0088cc] hover:bg-[#0077b5] text-white font-bold rounded-xl text-[14px] flex items-center justify-center gap-2 transition-all shadow-lg shadow-[#0088cc]/25 active:scale-95 mb-3"
-            >
-              <IoPaperPlaneOutline size={18} />
-              Telegram Botni ochish (@kechbakbot)
-            </a>
-
-            <button
-              type="button"
-              onClick={() => setMode('login')}
-              className="text-[#0f7b4c] text-[13px] font-bold hover:underline py-1"
-            >
-              Ro'yxatdan o'tganmisiz? Kirish ➔
-            </button>
-          </div>
-        )}
-
-        {/* 2-qadam: Telegramdan kelgan kodni tasdiqlash */}
+        {/* 2-QADAM: KODNI TASDIQLASH */}
         {step === 2 && (
           <form onSubmit={handleVerifyCode} className="flex flex-col gap-4">
             <button
@@ -257,7 +226,7 @@ const LoginPage = () => {
             </button>
 
             <p className="text-gray-500 text-[13px] text-center mb-1">
-              Tasdiqlash kodi Telegram orqali <span className="font-bold text-gray-800">{phone}</span> raqamiga yuborildi.
+              Tasdiqlash kodi <span className="font-bold text-gray-800">{phone}</span> raqamiga yuborildi.
             </p>
 
             {/* OTP kod input */}
@@ -296,10 +265,11 @@ const LoginPage = () => {
       </div>
 
       <p className="text-white/40 text-[12px] mt-6 text-center">
-        KeshBak © 2024 — Telegram OTP tizimi
+        KeshBak © 2024 — OTP Tizimi
       </p>
     </div>
   );
 };
 
 export default LoginPage;
+

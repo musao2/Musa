@@ -15,7 +15,8 @@ import {
   HiCalendarDays,
   HiReceiptPercent,
   HiLockClosed,
-  HiPaperAirplane
+  HiPaperAirplane,
+  HiPencilSquare
 } from 'react-icons/hi2';
 import { RiGasStationFill } from 'react-icons/ri';
 import { FaCrown, FaTrophy, FaMedal, FaShieldHalved } from 'react-icons/fa6';
@@ -27,10 +28,46 @@ import { supabase } from '../lib/supabase';
 const formatSum = (n) => Number(n || 0).toLocaleString('uz-UZ') + " so'm";
 
 const ProfilePage = () => {
-  const { profile, signOut, user } = useAuth();
-  const { transactions }           = useTransactions(user?.id);
-  const { station }                = useStationSettings();
-  const [copied, setCopied]        = useState(false);
+  const { profile, signOut, user, updateProfileName } = useAuth();
+  const { transactions } = useTransactions(user?.id);
+  const { station } = useStationSettings();
+  const [copied, setCopied] = useState(false);
+
+  // Ismni va familiyani tahrirlash state'lari
+  const [showEditName, setShowEditName] = useState(false);
+  const [editFirstName, setEditFirstName] = useState('');
+  const [editLastName, setEditLastName] = useState('');
+  const [savingName, setSavingName] = useState(false);
+
+  const openEditNameModal = () => {
+    let fn = profile?.first_name || '';
+    let ln = profile?.last_name || '';
+    if (!fn && profile?.name) {
+      const parts = profile.name.trim().split(' ');
+      fn = parts[0] || '';
+      ln = parts.slice(1).join(' ') || '';
+    }
+    setEditFirstName(fn);
+    setEditLastName(ln);
+    setShowEditName(true);
+  };
+
+  const handleSaveName = async (e) => {
+    e.preventDefault();
+    if (!editFirstName.trim()) return;
+    setSavingName(true);
+    const res = await updateProfileName({
+      firstName: editFirstName.trim(),
+      lastName: editLastName.trim()
+    });
+    setSavingName(false);
+    if (!res?.error) {
+      setShowEditName(false);
+      showToast('Ism va familiya muvaffaqiyatli yangilandi!', 'success');
+    } else {
+      showToast(res.error, 'error');
+    }
+  };
 
   // Modal holatlari: null | 'security' | 'notifications'
   const [activeModal, setActiveModal] = useState(null);
@@ -41,7 +78,7 @@ const ProfilePage = () => {
   const [biometricsEnabled, setBiometricsEnabled] = useState(
     localStorage.getItem('biometrics_enabled') === 'true'
   );
-  
+
   // Bildirishnoma sozlamalari
   const [pushEnabled, setPushEnabled] = useState(
     localStorage.getItem('push_enabled') !== 'false'
@@ -58,7 +95,7 @@ const ProfilePage = () => {
     .reduce((s, t) => s + Number(t.cashback_amount), 0);
 
   const copyCard = () => {
-    navigator.clipboard.writeText(profile?.card_number ?? '').catch(() => {});
+    navigator.clipboard.writeText(profile?.card_number ?? '').catch(() => { });
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
   };
@@ -138,7 +175,7 @@ const ProfilePage = () => {
     if (count >= 15 || totalEarnedCashback >= 200000) {
       return { name: 'Oltin', icon: FaTrophy, color: 'text-amber-500 bg-amber-50 border-amber-100' };
     }
-    if (count >= 5  || totalEarnedCashback >= 50000) {
+    if (count >= 5 || totalEarnedCashback >= 50000) {
       return { name: 'Kumush', icon: FaMedal, color: 'text-slate-600 bg-slate-100 border-slate-200' };
     }
     return { name: 'Standart', icon: FaShieldHalved, color: 'text-[#0f7b4c] bg-emerald-50 border-emerald-100' };
@@ -152,9 +189,8 @@ const ProfilePage = () => {
 
       {/* Toast xabar */}
       {message.text && (
-        <div className={`fixed top-4 left-1/2 -translate-x-1/2 z-50 px-4 py-3 rounded-xl shadow-lg text-[13px] font-semibold transition-all text-center min-w-[280px] ${
-          message.type === 'success' ? 'bg-[#0f7b4c] text-white' : 'bg-red-600 text-white'
-        }`}>
+        <div className={`fixed top-4 left-1/2 -translate-x-1/2 z-50 px-4 py-3 rounded-xl shadow-lg text-[13px] font-semibold transition-all text-center min-w-[280px] ${message.type === 'success' ? 'bg-[#0f7b4c] text-white' : 'bg-red-600 text-white'
+          }`}>
           {message.text}
         </div>
       )}
@@ -163,13 +199,22 @@ const ProfilePage = () => {
       <div className="bg-[#0f7b4c] pt-6 pb-10 px-5 text-white relative overflow-hidden">
         <div className="absolute -right-6 -top-6 w-32 h-32 bg-white/10 rounded-full blur-xl pointer-events-none" />
         <div className="absolute right-6 top-16 w-16 h-16 bg-white/5 rounded-full blur-lg pointer-events-none" />
-        
+
         <div className="flex items-center gap-4 relative z-10">
           <div className="w-16 h-16 bg-white/20 rounded-full flex items-center justify-center border-2 border-white/30 shrink-0 backdrop-blur-md">
             <HiUserCircle size={48} className="text-white" />
           </div>
           <div>
-            <h2 className="text-[20px] font-extrabold">{profile?.name || '—'}</h2>
+            <div className="flex items-center gap-2">
+              <h2 className="text-[20px] font-extrabold">{profile?.name || '—'}</h2>
+              <button
+                onClick={openEditNameModal}
+                className="w-7 h-7 bg-white/15 hover:bg-white/25 rounded-lg flex items-center justify-center text-white/90 transition-all active:scale-95"
+                title="Ism va familiyani o'zgartirish"
+              >
+                <HiPencilSquare size={16} />
+              </button>
+            </div>
             <p className="text-white/80 text-[13px] font-medium">
               {(() => {
                 const raw = profile?.phone || user?.phone || user?.email || '';
@@ -207,9 +252,8 @@ const ProfilePage = () => {
           </div>
           <button
             onClick={copyCard}
-            className={`flex items-center gap-1.5 text-[13px] font-semibold transition-colors ${
-              copied ? 'text-[#0f7b4c]' : 'text-gray-500 hover:text-gray-700'
-            }`}
+            className={`flex items-center gap-1.5 text-[13px] font-semibold transition-colors ${copied ? 'text-[#0f7b4c]' : 'text-gray-500 hover:text-gray-700'
+              }`}
           >
             <HiSquare2Stack size={17} />
             {copied ? 'Nusxalandi!' : 'Nusxa'}
@@ -219,7 +263,7 @@ const ProfilePage = () => {
 
       {/* Statistika kartalari */}
       <div className="grid grid-cols-3 gap-2.5 mx-4 mt-4 mb-5">
-        
+
         {/* Bu oy */}
         <div className="bg-white rounded-2xl p-3 flex flex-col items-center justify-center text-center shadow-xs border border-gray-100">
           <div className="w-8 h-8 rounded-xl bg-emerald-50 text-[#0f7b4c] flex items-center justify-center mb-1.5 border border-emerald-100">
@@ -274,7 +318,22 @@ const ProfilePage = () => {
       {/* Menyu */}
       <div className="mx-4 mb-4">
         <div className="bg-white rounded-2xl shadow-xs border border-gray-100 overflow-hidden font-medium">
-          
+
+          {/* Ismni tahrirlash tugmasi */}
+          <button
+            onClick={() => { setEditNameVal(profile?.name || ''); setShowEditName(true); }}
+            className="w-full flex items-center gap-3 px-4 py-4 text-left active:bg-gray-50 border-b border-gray-100"
+          >
+            <div className="w-9 h-9 bg-[#f0f7f4] rounded-xl flex items-center justify-center text-[#0f7b4c] border border-emerald-100">
+              <HiUserCircle size={20} />
+            </div>
+            <div className="flex-1">
+              <p className="font-bold text-[14px] text-[#1a1a1a]">Ismni tahrirlash</p>
+              <p className="text-gray-400 text-[12px]">Ism va familiyangizni yangilash</p>
+            </div>
+            <HiChevronRight size={17} className="text-gray-300" />
+          </button>
+
           {/* Xavfsizlik tugmasi */}
           <button
             onClick={() => setActiveModal('security')}
@@ -285,7 +344,7 @@ const ProfilePage = () => {
             </div>
             <div className="flex-1">
               <p className="font-bold text-[14px] text-[#1a1a1a]">Akkaunt Xavfsizligi</p>
-              <p className="text-gray-400 text-[12px]">Telegram ulanishi va hisob himoyasi</p>
+              <p className="text-gray-400 text-[12px]">Raqam va hisob xavfsizligi</p>
             </div>
             <HiChevronRight size={17} className="text-gray-300" />
           </button>
@@ -348,7 +407,7 @@ const ProfilePage = () => {
             </h3>
 
             <div className="flex flex-col gap-4">
-              {/* Telegram raqami va status */}
+              {/* Telefon raqami va status */}
               <div className="bg-gray-50 border border-gray-100 rounded-2xl p-4 flex flex-col gap-2">
                 <div className="flex items-center justify-between">
                   <span className="text-[12px] font-semibold text-gray-400">Ulangan Telefon Raqam</span>
@@ -361,29 +420,18 @@ const ProfilePage = () => {
                 </p>
               </div>
 
-              {/* Telegram OTP himoyasi info */}
+              {/* OTP himoyasi info */}
               <div className="bg-[#f0f7f4] border border-[#0f7b4c]/20 rounded-2xl p-4 flex items-start gap-3">
                 <div className="w-8 h-8 rounded-xl bg-[#0f7b4c]/10 text-[#0f7b4c] flex items-center justify-center shrink-0 mt-0.5">
                   <HiLockClosed size={18} />
                 </div>
                 <div>
-                  <p className="font-bold text-[13px] text-gray-900">Telegram OTP Himoyasi</p>
+                  <p className="font-bold text-[13px] text-gray-900">OTP Himoyasi</p>
                   <p className="text-gray-600 text-[12px] mt-0.5 leading-relaxed">
-                    Sizning hisobingiz parolsiz, Telegram Bot orqali 4 xonali bir martalik kod (OTP) bilan to'liq himoyalangan.
+                    Sizning hisobingiz 4 xonali bir martalik kod (OTP) bilan to'liq himoyalangan.
                   </p>
                 </div>
               </div>
-
-              {/* Bot link */}
-              <a
-                href="https://t.me/kechbakbot"
-                target="_blank"
-                rel="noopener noreferrer"
-                className="w-full h-12 bg-[#0088cc] hover:bg-[#0077b5] text-white font-bold rounded-xl text-[13px] flex items-center justify-center gap-2 transition-all shadow-md shadow-[#0088cc]/20 active:scale-95 mt-1"
-              >
-                <HiPaperAirplane size={16} />
-                @kechbakbot botiga o'tish
-              </a>
             </div>
           </div>
         </div>
@@ -405,7 +453,7 @@ const ProfilePage = () => {
             </h3>
 
             <div className="flex flex-col gap-4">
-              
+
               {/* Push Notifications Toggle */}
               <div className="flex items-center justify-between border-b border-gray-100 pb-4">
                 <div>
@@ -414,13 +462,11 @@ const ProfilePage = () => {
                 </div>
                 <button
                   onClick={togglePush}
-                  className={`w-12 h-6.5 rounded-full p-0.5 transition-colors duration-200 ${
-                    pushEnabled ? 'bg-[#0f7b4c]' : 'bg-gray-300'
-                  }`}
+                  className={`w-12 h-6.5 rounded-full p-0.5 transition-colors duration-200 ${pushEnabled ? 'bg-[#0f7b4c]' : 'bg-gray-300'
+                    }`}
                 >
-                  <div className={`w-5.5 h-5.5 rounded-full bg-[#ffffff] shadow-md transform transition-transform duration-200 ${
-                    pushEnabled ? 'translate-x-5.5' : 'translate-x-0'
-                  }`} />
+                  <div className={`w-5.5 h-5.5 rounded-full bg-[#ffffff] shadow-md transform transition-transform duration-200 ${pushEnabled ? 'translate-x-5.5' : 'translate-x-0'
+                    }`} />
                 </button>
               </div>
 
@@ -432,17 +478,62 @@ const ProfilePage = () => {
                 </div>
                 <button
                   onClick={toggleSms}
-                  className={`w-12 h-6.5 rounded-full p-0.5 transition-colors duration-200 ${
-                    smsEnabled ? 'bg-[#0f7b4c]' : 'bg-gray-300'
-                  }`}
+                  className={`w-12 h-6.5 rounded-full p-0.5 transition-colors duration-200 ${smsEnabled ? 'bg-[#0f7b4c]' : 'bg-gray-300'
+                    }`}
                 >
-                  <div className={`w-5.5 h-5.5 rounded-full bg-[#ffffff] shadow-md transform transition-transform duration-200 ${
-                    smsEnabled ? 'translate-x-5.5' : 'translate-x-0'
-                  }`} />
+                  <div className={`w-5.5 h-5.5 rounded-full bg-[#ffffff] shadow-md transform transition-transform duration-200 ${smsEnabled ? 'translate-x-5.5' : 'translate-x-0'
+                    }`} />
                 </button>
               </div>
 
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* ISMNI TAHRIRLASH MODALI */}
+      {showEditName && (
+        <div className="fixed inset-0 z-[100] bg-black/65 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl w-full max-w-sm p-6 shadow-2xl relative">
+            <button
+              onClick={() => setShowEditName(false)}
+              className="absolute right-4 top-4 text-gray-400 hover:text-gray-600"
+            >
+              <HiXMark size={24} />
+            </button>
+            <h3 className="text-[17px] font-bold text-[#1a1a1a] mb-4">
+              Ism va familiyani o'zgartirish
+            </h3>
+            <form onSubmit={handleSaveName} className="flex flex-col gap-3">
+              <div>
+                <label className="text-[12px] font-semibold text-gray-500 mb-1 block">Ism</label>
+                <input
+                  type="text"
+                  value={editFirstName}
+                  onChange={e => setEditFirstName(e.target.value)}
+                  placeholder="Ismingiz"
+                  required
+                  className="w-full h-12 px-4 bg-gray-50 border border-gray-200 rounded-xl text-[14px] font-bold text-gray-800 outline-none focus:border-[#0f7b4c]"
+                />
+              </div>
+              <div>
+                <label className="text-[12px] font-semibold text-gray-500 mb-1 block">Familiya</label>
+                <input
+                  type="text"
+                  value={editLastName}
+                  onChange={e => setEditLastName(e.target.value)}
+                  placeholder="Familiyangiz (ixtiyoriy)"
+                  className="w-full h-12 px-4 bg-gray-50 border border-gray-200 rounded-xl text-[14px] font-bold text-gray-800 outline-none focus:border-[#0f7b4c]"
+                />
+              </div>
+              <button
+                type="submit"
+                disabled={savingName}
+                className="w-full h-12 bg-[#0f7b4c] text-white font-bold text-[14px] rounded-xl active:scale-95 transition-all shadow-md shadow-[#0f7b4c]/20 disabled:opacity-60 mt-1"
+              >
+                {savingName ? 'Saqlanmoqda...' : 'Saqlash'}
+              </button>
+            </form>
           </div>
         </div>
       )}

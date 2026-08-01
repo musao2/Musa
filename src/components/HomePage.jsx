@@ -23,16 +23,16 @@ const formatDate = (iso) => {
 
 const HomePage = () => {
   const { user, profile, refreshProfile } = useAuth();
-  const { transactions, addTransaction }  = useTransactions(user?.id);
-  const { station }                        = useStationSettings();
-  const [showScanner, setShowScanner]     = useState(false);
-  const [scanMsg, setScanMsg]             = useState('');
+  const { transactions, addTransaction } = useTransactions(user?.id);
+  const { station } = useStationSettings();
+  const [showScanner, setShowScanner] = useState(false);
+  const [scanMsg, setScanMsg] = useState('');
 
   const recentTx = transactions.slice(0, 3);
 
   const handleScan = async (qrData) => {
     setShowScanner(false);
-    
+
     // QR dan summa va keshbek foizini to'g'ri ajratish
     let amount = 100000;
     let tokenId = '';
@@ -58,8 +58,8 @@ const HomePage = () => {
     }
 
     // Tranzaksiyani yuborish
-    const { cashbackAmount, error } = await addTransaction({ 
-      amount, 
+    const { cashbackAmount, error } = await addTransaction({
+      amount,
       cashbackPercent: cashbackPercent, // Dinamik foizni yuboramiz
       type: scanType,
       tokenId: tokenId,
@@ -88,36 +88,46 @@ const HomePage = () => {
 
       <div className="flex-1 px-4 pt-6 bg-gray-50 pb-6 w-full font-sans">
 
-        {/* Salomlashuv */}
-        <p className="text-gray-500 text-[13px] mb-0.5">Xush kelibsiz,</p>
-        <h2 className="text-[20px] font-extrabold text-[#1a1a1a] mb-5">
-          {profile?.name || 'Foydalanuvchi'}
-        </h2>
-
         {/* Scan xabari */}
         {scanMsg && (
-          <div className={`mb-4 px-4 py-3 rounded-xl text-[14px] font-semibold text-center ${
-            scanMsg.startsWith('✅') ? 'bg-[#e8f5e9] text-[#0f7b4c]' : 'bg-red-50 text-red-500'
-          }`}>
+          <div className={`mb-4 px-4 py-3 rounded-xl text-[14px] font-semibold text-center ${scanMsg.startsWith('✅') ? 'bg-[#e8f5e9] text-[#0f7b4c]' : 'bg-red-50 text-red-500'
+            }`}>
             {scanMsg}
           </div>
         )}
 
         {/* Balans kartasi */}
-        <div className="bg-[#0f7b4c] rounded-2xl p-5 text-white mb-5 shadow-lg shadow-[#0f7b4c]/15 relative overflow-hidden">
+        <div className="bg-gradient-to-br from-[#0c613c] via-[#0f7b4c] to-[#14965d] rounded-3xl p-5 text-white mb-5 shadow-xl shadow-[#0f7b4c]/20 relative overflow-hidden border border-white/10">
+          {/* Decorative background glows */}
           <div className="absolute -right-6 -bottom-6 w-32 h-32 bg-white/10 rounded-full blur-xl pointer-events-none" />
-          <p className="text-white/70 text-[13px] mb-1">Keshbek balansi</p>
-          <h3 className="text-[36px] font-extrabold leading-none mb-3">
-            {formatSum(profile?.cashback_balance)}
-          </h3>
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-1.5 bg-white/15 px-3 py-1 rounded-full text-[13px]">
-              <HiSparkles size={15} className="text-amber-300" />
-              <span>{station.cashback_percent}% keshbek</span>
-            </div>
-            <div className="flex items-center gap-1.5 text-white/80 text-[12px] font-medium">
-              <RiGasStationFill size={16} />
-              <span>{station.name}</span>
+          <div className="absolute -left-6 -top-6 w-24 h-24 bg-emerald-400/20 rounded-full blur-lg pointer-events-none" />
+
+          {/* User greeting header inside card */}
+          <div className="pb-3 mb-3.5 border-b border-white/15 relative z-10">
+            <h2 className="text-[16px] text-white font-extrabold leading-tight flex items-center gap-1.5 flex-wrap">
+              <span className="text-emerald-200/90 font-medium">Xush kelibsiz,</span>
+              <span>{profile?.name || 'Foydalanuvchi'}</span>
+              <span>👋</span>
+            </h2>
+          </div>
+
+          {/* Balance info */}
+          <div className="relative z-10">
+            <p className="text-emerald-100/75 text-[12px] font-medium mb-1">Keshbek balansi</p>
+            <h3 className="text-[34px] font-black leading-none mb-4 tracking-tight">
+              {formatSum(profile?.cashback_balance)}
+            </h3>
+
+            {/* Bottom badge and station */}
+            <div className="flex items-center justify-between pt-1">
+              <div className="flex items-center gap-1.5 bg-white/15 backdrop-blur-md px-3 py-1.5 rounded-full text-[12px] font-bold text-emerald-50 border border-white/15">
+                <HiSparkles size={14} className="text-amber-300" />
+                <span>{station.cashback_percent}% keshbek</span>
+              </div>
+              <div className="flex items-center gap-1.5 text-white/80 text-[12px] font-medium">
+                <RiGasStationFill size={15} />
+                <span>{station.name}</span>
+              </div>
             </div>
           </div>
         </div>

@@ -184,17 +184,14 @@ export const AuthProvider = ({ children }) => {
     const phoneDigits = cleanPhone.replace('+', '');
     const password = `OtpSecretPasswordFor_${phoneDigits}`;
 
-    // Telegram botdan ism kelganligini tekshirish (agar front-enddan berilmagan bo'lsa)
-    let finalName = name?.trim();
-    if (!finalName) {
-      try {
-        const { data: tgUser } = await supabase
-          .from('telegram_users')
-          .select('name')
-          .eq('phone', cleanPhone)
-          .maybeSingle();
-        if (tgUser?.name) finalName = tgUser.name;
-      } catch (e) {}
+    let finalName = name?.trim() || '';
+    let finalFirstName = '';
+    let finalLastName = '';
+
+    if (finalName) {
+      const parts = finalName.split(' ');
+      finalFirstName = parts[0] || '';
+      finalLastName = parts.slice(1).join(' ') || '';
     }
 
     // 3. Tizimga kirishga urinish (Supabase Auth)
@@ -261,14 +258,24 @@ export const AuthProvider = ({ children }) => {
     const cardNumber = profileExists?.card_number || ('KB-' + new Date().getFullYear() + '-' + Math.floor(Math.random() * 9000 + 1000));
 
     if (!profileExists) {
-      await supabase.from('profiles').insert({
+      const payload = {
         id:               userId,
         name:             finalName || 'Mijoz',
         phone:            cleanPhone,
         card_number:      cardNumber,
         cashback_balance: 0,
         level:            'Standart',
-      });
+      };
+      if (finalFirstName) payload.first_name = finalFirstName;
+      if (finalLastName) payload.last_name = finalLastName;
+
+      let { error: insertErr } = await supabase.from('profiles').insert(payload);
+      if (insertErr) {
+        // agar first_name/last_name ustunlari DB ga qo'shilmagan bo'lsa fallback
+        delete payload.first_name;
+        delete payload.last_name;
+        await supabase.from('profiles').insert(payload);
+      }
     } else {
       const hasNoName = !profileExists.name;
       const isDefaultName = profileExists.name === 'Mijoz';
@@ -279,27 +286,63 @@ export const AuthProvider = ({ children }) => {
       };
       if (finalName && (hasNoName || isDefaultName)) {
         updateData.name = finalName;
+        if (finalFirstName) updateData.first_name = finalFirstName;
+        if (finalLastName) updateData.last_name = finalLastName;
       }
 
-      await supabase.from('profiles').update(updateData).eq('phone', cleanPhone);
+      let { error: updErr } = await supabase.from('profiles').update(updateData).eq('phone', cleanPhone);
+      if (updErr) {
+        delete updateData.first_name;
+        delete updateData.last_name;
+        await supabase.from('profiles').update(updateData).eq('phone', cleanPhone);
+      }
     }
 
     await loadProfile(userId, { email, phone: cleanPhone });
     return { success: true };
   };
 
-  // Profil ismini yangilash
-  const updateProfileName = async (newName) => {
+  // Profil ismini yangilash (Ism va Familiyani alohida qabul qiladi)
+  const updateProfileName = async (firstNameVal, lastNameVal = '') => {
     if (!user) return { error: 'Tizimga kirmagansiz' };
-    const cleanName = newName.trim();
-    if (!cleanName) return { error: 'Ism bo\'sh bo\'lishi mumkin emas' };
 
-    const { error } = await supabase
+    let cleanFirst = '';
+    let cleanLast = '';
+
+    if (typeof firstNameVal === 'object' && firstNameVal !== null) {
+      cleanFirst = (firstNameVal.firstName || firstNameVal.first_name || '').trim();
+      cleanLast = (firstNameVal.lastName || firstNameVal.last_name || '').trim();
+    } else if (typeof firstNameVal === 'string' && lastNameVal) {
+      cleanFirst = firstNameVal.trim();
+      cleanLast = lastNameVal.trim();
+    } else if (typeof firstNameVal === 'string') {
+      const parts = firstNameVal.trim().split(' ');
+      cleanFirst = parts[0] || '';
+      cleanLast = parts.slice(1).join(' ') || '';
+    }
+
+    const fullName = [cleanFirst, cleanLast].filter(Boolean).join(' ').trim();
+    if (!fullName) return { error: 'Ism bo\'sh bo\'lishi mumkin emas' };
+
+    const updatePayload = {
+      name: fullName,
+      first_name: cleanFirst || null,
+      last_name: cleanLast || null,
+    };
+
+    let { error } = await supabase
       .from('profiles')
-      .update({ name: cleanName })
+      .update(updatePayload)
       .eq('id', user.id);
 
-    if (error) return { error: error.message };
+    if (error) {
+      // Supabase-da first_name/last_name ustunlari yo'q bo'lsa fallback
+      const fallback = await supabase
+        .from('profiles')
+        .update({ name: fullName })
+        .eq('id', user.id);
+      if (fallback.error) return { error: fallback.error.message };
+    }
     await loadProfile(user.id);
     return { success: true };
   };

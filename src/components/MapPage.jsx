@@ -9,15 +9,15 @@ import {
 } from 'react-icons/io5';
 import { BsFuelPump } from 'react-icons/bs';
 import { useStationSettings } from '../hooks/useStationSettings';
+import CustomerReviews from './CustomerReviews';
 
 const MapPage = () => {
-  const { station, loading } = useStationSettings();
+  const { station } = useStationSettings();
 
   // Yandex va Google Maps orqali Navigatsiyani ochish
   const handleOpenNavigation = () => {
     const lat = station.lat || 41.3653226;
     const lng = station.lng || 69.2870051;
-    // Yandex Maps yo'l ko'rsatish
     const yandexUrl = `https://yandex.com/maps/?rtext=~${lat},${lng}&rtt=auto`;
     window.open(yandexUrl, '_blank');
   };
@@ -27,7 +27,7 @@ const MapPage = () => {
   const osmEmbedUrl = `https://www.openstreetmap.org/export/embed.html?bbox=${lng - 0.005}%2C${lat - 0.003}%2C${lng + 0.005}%2C${lat + 0.003}&layer=mapnik&marker=${lat}%2C${lng}`;
 
   return (
-    <div className="flex-1 bg-gray-50 w-full font-sans flex flex-col pb-6">
+    <div className="flex-1 bg-gray-50 w-full font-sans flex flex-col pb-10">
 
       {/* Real Interaktiv Xarita (OpenStreetMap Embed) */}
       <div className="relative mx-4 mt-5 rounded-2xl overflow-hidden shadow-sm border border-gray-200" style={{ height: 230 }}>
@@ -130,6 +130,10 @@ const MapPage = () => {
           </div>
         </div>
       </div>
+
+      {/* BIZNING MIJOZLAR FIKRLARI BO'LIMI */}
+      <CustomerReviews />
+
     </div>
   );
 };

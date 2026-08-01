@@ -1,16 +1,26 @@
 import React, { useState } from 'react';
-import { HiSparkles, HiQrCode } from 'react-icons/hi2';
+import { HiSparkles, HiQrCode, HiGift } from 'react-icons/hi2';
 import { RiGasStationFill } from 'react-icons/ri';
 import { useAuth } from '../context/AuthContext';
 import { useTransactions } from '../hooks/useTransactions';
 import { useStationSettings } from '../hooks/useStationSettings';
 import QRScanner from './QRScanner';
 import PostPaymentReviewModal from './PostPaymentReviewModal';
-import CustomerReviews from './CustomerReviews';
 
 // So'm formatini chiroyli ko'rsatish
 const formatSum = (n) =>
   Number(n || 0).toLocaleString('uz-UZ') + " so'm";
+
+const formatDate = (iso) => {
+  const d = new Date(iso);
+  const pad = (n) => String(n).padStart(2, '0');
+  const day = pad(d.getDate());
+  const month = pad(d.getMonth() + 1);
+  const year = d.getFullYear();
+  const hour = pad(d.getHours());
+  const minute = pad(d.getMinutes());
+  return `${day}.${month}.${year} ${hour}:${minute}`;
+};
 
 const HomePage = () => {
   const { user, profile, refreshProfile } = useAuth();
@@ -22,10 +32,11 @@ const HomePage = () => {
   // To'lovdan so'ng chiqadigan Sharh Modali state-i
   const [showReviewModal, setShowReviewModal] = useState(false);
 
+  const recentTx = transactions.slice(0, 3);
+
   const handleScan = async (qrData) => {
     setShowScanner(false);
 
-    // QR dan summa va keshbek foizini to'g'ri ajratish
     let amount = 100000;
     let tokenId = '';
     let scanType = 'cashback';
@@ -49,7 +60,6 @@ const HomePage = () => {
       return;
     }
 
-    // Tranzaksiyani yuborish
     const { cashbackAmount, error } = await addTransaction({
       amount,
       cashbackPercent: cashbackPercent,
@@ -143,9 +153,61 @@ const HomePage = () => {
           <span className="text-[#03543d]/70 text-[12px] mt-0.5">To'lov uchun skanerlang</span>
         </div>
 
-        {/* Bizning mijozlar fikrlari bo'limi */}
-        <div className="-mx-4">
-          <CustomerReviews />
+        {/* Aksiya banneri */}
+        <div className="bg-[#fee2cc] rounded-2xl p-4 mb-6 flex items-center gap-4 border border-[#fcd3b0]">
+          <div className="w-12 h-12 bg-[#f6d0b3] rounded-xl flex items-center justify-center text-[#965b20] shrink-0">
+            <RiGasStationFill size={22} />
+          </div>
+          <div>
+            <h4 className="font-extrabold text-[15px] text-[#4a2e12]">Har bir to'lovda keshbek!</h4>
+            <p className="text-[12px] text-[#784d24] mt-0.5 leading-snug">
+              Har bir quyishda {station.cashback_percent}% keshbek yig'ing va keyingi to'lovlarda ishlating.
+            </p>
+          </div>
+        </div>
+
+        {/* Oxirgi amallar */}
+        <div>
+          <div className="flex justify-between items-center mb-3">
+            <h4 className="font-extrabold text-[16px] text-gray-900">Oxirgi amallar</h4>
+          </div>
+
+          {recentTx.length === 0 ? (
+            <div className="bg-white rounded-2xl p-6 text-center text-gray-400 text-[13px] border border-gray-100">
+              Hozircha amallar yo'q
+            </div>
+          ) : (
+            <div className="space-y-2.5">
+              {recentTx.map((tx) => {
+                const isWithdraw = Number(tx.cashback_amount) < 0;
+                const amt = isWithdraw ? Math.abs(Number(tx.cashback_amount)) : Number(tx.cashback_amount);
+
+                return (
+                  <div
+                    key={tx.id}
+                    className="bg-white rounded-2xl p-3.5 flex items-center justify-between border border-gray-100 shadow-2xs"
+                  >
+                    <div className="flex items-center gap-3">
+                      <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${isWithdraw ? 'bg-red-50 text-red-500' : 'bg-[#e8f5e9] text-[#0f7b4c]'
+                        }`}>
+                        {isWithdraw ? <HiGift size={20} /> : <HiSparkles size={20} />}
+                      </div>
+                      <div>
+                        <p className="font-bold text-[14px] text-gray-800">
+                          {isWithdraw ? "Keshbek yechildi" : "Keshbek yig'ildi"}
+                        </p>
+                        <p className="text-[11px] text-gray-400">{formatDate(tx.created_at)}</p>
+                      </div>
+                    </div>
+                    <span className={`font-extrabold text-[15px] ${isWithdraw ? 'text-red-500' : 'text-[#0f7b4c]'
+                      }`}>
+                      {isWithdraw ? '-' : '+'}{formatSum(amt)}
+                    </span>
+                  </div>
+                );
+              })}
+            </div>
+          )}
         </div>
 
       </div>

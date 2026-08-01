@@ -81,47 +81,38 @@ export const AuthProvider = ({ children }) => {
     let currentSubscribedUserId = null;
 
     const setupProfileSubscription = (userId) => {
-      if (!userId || currentSubscribedUserId === userId) return;
+      if (!userId) return;
+      if (currentSubscribedUserId === userId && profileChannel) return;
 
       if (profileChannel) {
-        supabase.removeChannel(profileChannel);
+        try {
+          supabase.removeChannel(profileChannel);
+        } catch (e) {}
         profileChannel = null;
       }
 
       currentSubscribedUserId = userId;
-      const channel = supabase
-        .channel(`profile_changes_${userId}_${Date.now()}`)
-        .on(
-          'postgres_changes',
-          {
-            event: '*',
-            schema: 'public',
-            table: 'profiles',
-            filter: `id=eq.${userId}`,
-          },
-          (payload) => {
-            if (payload.new) {
-              setProfile(payload.new);
-            }
+      const channel = supabase.channel(`profile_changes_${userId}`);
+      channel.on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'profiles',
+          filter: `id=eq.${userId}`,
+        },
+        (payload) => {
+          if (payload.new) {
+            setProfile(payload.new);
           }
-        );
+        }
+      );
 
       channel.subscribe();
       profileChannel = channel;
     };
 
-    // Joriy sessiyani tekshirish
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      const u = session?.user ?? null;
-      setUser(u);
-      if (u) {
-        loadProfile(u.id, u);
-        setupProfileSubscription(u.id);
-      }
-      setLoading(false);
-    });
-
-    // Auth o'zgarishlarini tinglash
+    // Auth o'zgarishlarini va sessiyani bir joyda tinglash
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       async (_event, session) => {
         const u = session?.user ?? null;
@@ -133,7 +124,9 @@ export const AuthProvider = ({ children }) => {
           setProfile(null);
           currentSubscribedUserId = null;
           if (profileChannel) {
-            supabase.removeChannel(profileChannel);
+            try {
+              supabase.removeChannel(profileChannel);
+            } catch (e) {}
             profileChannel = null;
           }
         }
@@ -143,7 +136,11 @@ export const AuthProvider = ({ children }) => {
 
     return () => {
       subscription.unsubscribe();
-      if (profileChannel) supabase.removeChannel(profileChannel);
+      if (profileChannel) {
+        try {
+          supabase.removeChannel(profileChannel);
+        } catch (e) {}
+      }
     };
   }, []);
 

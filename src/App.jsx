@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { AuthProvider, useAuth } from './context/AuthContext';
+import { NotificationProvider, useNotifications } from './context/NotificationContext';
 import Header from './components/Header';
 import BottomNav from './components/BottomNav';
 import HomePage from './components/HomePage';
@@ -7,14 +8,12 @@ import HistoryPage from './components/HistoryPage';
 import MapPage from './components/MapPage';
 import ProfilePage from './components/ProfilePage';
 import LoginPage from './components/LoginPage';
-import { supabase } from './lib/supabase';
 import { IoNotificationsOutline, IoClose } from 'react-icons/io5';
-import { BsFuelPump } from 'react-icons/bs';
 
 const AppContent = () => {
-  const { user, profile, loading, refreshProfile, updateProfileName } = useAuth();
+  const { user, profile, loading, updateProfileName } = useAuth();
+  const { latestToast, setLatestToast } = useNotifications();
   const [activeTab, setActiveTab] = useState('home');
-  const [pushNotification, setPushNotification] = useState(null);
   
   // Majburiy ism so'rash state'lari
   const [mandatoryName, setMandatoryName] = useState('');
@@ -39,59 +38,6 @@ const AppContent = () => {
       setNameError('');
     }
   };
-
-  // Global real-time tranzaksiyalar bildirishnomasi
-  useEffect(() => {
-    if (!user) return;
-
-    const channel = supabase
-      .channel('global_tx_notifications')
-      .on('postgres_changes', {
-        event: 'INSERT',
-        schema: 'public',
-        table: 'transactions',
-        filter: `user_id=eq.${user.id}`,
-      }, (payload) => {
-        const tx = payload.new;
-        const amt = Number(tx.amount).toLocaleString('uz-UZ') + " so'm";
-        const cb = Number(Math.abs(tx.cashback_amount)).toLocaleString('uz-UZ') + " so'm";
-
-        const isPushEnabled = localStorage.getItem('push_enabled') !== 'false';
-        if (!isPushEnabled) return;
-
-        refreshProfile();
-
-        const notifData = tx.cashback_amount < 0 
-          ? {
-              title: "Keshbek yechib olindi 💳",
-              body: `Hisobingizdan ${cb} yechib olindi (To'lov summasi: ${amt})`,
-              type: 'withdraw'
-            }
-          : {
-              title: "Keshbek hisoblandi! 🎉",
-              body: `Sizga +${cb} keshbek qo'shildi! (To'lov: ${amt})`,
-              type: 'cashback'
-            };
-
-        setPushNotification(notifData);
-
-        if (Notification.permission === 'granted') {
-          new Notification(notifData.title, {
-            body: notifData.body,
-            icon: '/favicon.svg'
-          });
-        }
-
-        setTimeout(() => setPushNotification(null), 4500);
-      })
-      .subscribe();
-
-    if ('Notification' in window && Notification.permission === 'default') {
-      Notification.requestPermission();
-    }
-
-    return () => supabase.removeChannel(channel);
-  }, [user, refreshProfile]);
 
   // Yuklash
   if (loading) {
@@ -157,25 +103,30 @@ const AppContent = () => {
         </div>
       )}
 
-      {/* GLOBAL NATIVE IN-APP PUSH NOTIFICATION */}
-      {pushNotification && (
-        <div className="fixed top-4 left-4 right-4 z-[999] bg-white/95 backdrop-blur-md rounded-2xl p-4 shadow-xl border border-gray-100 flex items-start gap-3 animate-slide-down">
-          <div className="w-10 h-10 bg-[#f0f7f4] rounded-xl flex items-center justify-center text-[#0f7b4c] shrink-0">
-            <IoNotificationsOutline size={20} className="animate-bounce" />
+      {/* REALTIME BILDIRISHNOMA POPUP TOAST */}
+      {latestToast && (
+        <div key={latestToast.id || 'notif-toast'} className="fixed top-4 left-4 right-4 z-[9999] bg-[#0f7b4c] text-white rounded-2xl p-4 shadow-2xl flex items-start gap-3 animate-slide-down border border-emerald-400/30">
+          <div className="w-10 h-10 bg-white/20 rounded-xl flex items-center justify-center text-white shrink-0 mt-0.5">
+            <IoNotificationsOutline size={22} className="animate-bounce" />
           </div>
           <div className="flex-1 min-w-0">
-            <p className="font-extrabold text-[14px] text-gray-900 leading-tight">
-              {pushNotification.title}
+            <p className="font-extrabold text-[14px] text-white leading-tight">
+              {latestToast.title || 'Yangi bildirishnoma!'}
             </p>
-            <p className="text-[12px] text-gray-500 mt-0.5 leading-snug">
-              {pushNotification.body}
+            <p className="text-[12px] text-white/90 mt-0.5 leading-snug break-words">
+              {latestToast.message}
             </p>
+            {latestToast.amount && (
+              <span className="inline-block mt-1 font-bold text-[12px] bg-white/20 px-2 py-0.5 rounded-md">
+                +{Number(latestToast.amount).toLocaleString('uz-UZ')} so'm
+              </span>
+            )}
           </div>
           <button 
-            onClick={() => setPushNotification(null)}
-            className="text-gray-400 hover:text-gray-600 shrink-0"
+            onClick={() => setLatestToast(null)}
+            className="text-white/70 hover:text-white shrink-0 p-1 cursor-pointer"
           >
-            <IoClose size={18} />
+            <IoClose size={20} />
           </button>
         </div>
       )}
@@ -192,7 +143,9 @@ const AppContent = () => {
 function App() {
   return (
     <AuthProvider>
-      <AppContent />
+      <NotificationProvider>
+        <AppContent />
+      </NotificationProvider>
     </AuthProvider>
   );
 }

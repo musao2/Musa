@@ -40,12 +40,17 @@ const HistoryPage = () => {
   const { station }                = useStationSettings();
   const [activeTab, setActiveTab] = useState('ALL'); // 'ALL' | 'KIRIM' | 'CHIQIM'
 
+  // Faqat haqiqiy pul tushgan yoki yechilgan tranzaksiyalar (0 so'mlik oddiy xabarlar o'tmaydi)
+  const validTransactions = transactions.filter(
+    (t) => Math.abs(Number(t.amount || 0)) > 0 || Math.abs(Number(t.cashback_amount || 0)) > 0
+  );
+
   // Kirim va Chiqim amallarini ajratish
-  const kirimTransactions = transactions.filter(
+  const kirimTransactions = validTransactions.filter(
     (t) => Number(t.cashback_amount) > 0 || (t.type || '').toLowerCase() === 'cashback' || (t.type || '').toUpperCase() === 'EARN'
   );
   
-  const chiqimTransactions = transactions.filter(
+  const chiqimTransactions = validTransactions.filter(
     (t) => Number(t.cashback_amount) < 0 || (t.type || '').toLowerCase() === 'withdraw' || (t.type || '').toUpperCase() === 'WITHDRAW'
   );
 
@@ -54,7 +59,7 @@ const HistoryPage = () => {
   const currentCashbackBalance = profile?.cashback_balance ?? Math.max(0, totalKirim - totalChiqim);
 
   // Saralanayotgan ro'yxat
-  const filteredList = transactions.filter((t) => {
+  const filteredList = validTransactions.filter((t) => {
     const isChiqim = Number(t.cashback_amount) < 0 || (t.type || '').toLowerCase() === 'withdraw' || (t.type || '').toUpperCase() === 'WITHDRAW';
     if (activeTab === 'KIRIM') return !isChiqim;
     if (activeTab === 'CHIQIM') return isChiqim;

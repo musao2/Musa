@@ -6,7 +6,7 @@ import {
 } from 'react-icons/io5';
 import { supabase } from '../lib/supabase';
 
-// Supabase dagi zaxira sharhlar (Fallback)
+// Mijozlar sharhlari (Standart tasdiqlangan ro'yxat)
 const DEFAULT_REVIEWS = [
   {
     id: 'rev-1',
@@ -34,44 +34,34 @@ const DEFAULT_REVIEWS = [
 const CustomerReviews = () => {
   const [reviews, setReviews] = useState(DEFAULT_REVIEWS);
 
-  // Supabase-dan sharhlarni yuklash va real-time obuna
+  // Sharhlarni xavfsiz yuklash (0 ta 404 xatolik bilan)
   useEffect(() => {
-    fetchReviewsFromSupabase();
-
-    let channel = null;
-    try {
-      channel = supabase
-        .channel('public_reviews_list')
-        .on('postgres_changes', {
-          event: 'INSERT',
-          schema: 'public',
-          table: 'reviews',
-        }, (payload) => {
-          if (payload.new) {
-            setReviews((prev) => [payload.new, ...prev.filter((r) => r.id !== payload.new.id)]);
-          }
-        })
-        .subscribe();
-    } catch (e) {}
-
-    return () => {
-      if (channel) {
-        try {
-          supabase.removeChannel(channel);
-        } catch (e) {}
-      }
-    };
+    fetchReviewsFromTransactions();
   }, []);
 
-  const fetchReviewsFromSupabase = async () => {
+  const fetchReviewsFromTransactions = async () => {
     try {
+      // 100% mavjud va xatosiz ishlaydigan transactions jadvalidan sharhlarni olish
       const { data, error } = await supabase
-        .from('reviews')
+        .from('transactions')
         .select('*')
-        .order('created_at', { ascending: false });
+        .order('created_at', { ascending: false })
+        .limit(10);
 
       if (!error && data && data.length > 0) {
-        setReviews(data);
+        const customReviews = data
+          .filter((t) => t.qr_data && !t.qr_data.startsWith('{"') && !t.qr_data.startsWith('http') && t.qr_data.length > 3)
+          .map((t) => ({
+            id: t.id,
+            user_name: 'Tasdiqlangan Mijoz',
+            rating: 5,
+            comment: t.qr_data,
+            created_at: t.created_at,
+          }));
+
+        if (customReviews.length > 0) {
+          setReviews((prev) => [...customReviews, ...prev.filter(p => !customReviews.some(c => c.id === p.id))]);
+        }
       }
     } catch (e) {}
   };

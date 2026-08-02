@@ -2,11 +2,14 @@ import React, { useState, useEffect } from 'react';
 import { 
   IoStar, 
   IoCheckmarkCircle, 
-  IoSparkles
+  IoSparkles,
+  IoChevronDownOutline,
+  IoChevronUpOutline
 } from 'react-icons/io5';
+import { supabase } from '../lib/supabase';
 
-// Tasdiqlangan mijozlarning haqiqiy baho va sharhlari ro'yxati
-const INITIAL_CUSTOMER_REVIEWS = [
+// Tasdiqlangan mijozlarning dastlabki baho va sharhlari
+const DEFAULT_CUSTOMER_REVIEWS = [
   {
     id: 'rev-1',
     user_name: 'Shoxrux M.',
@@ -34,21 +37,60 @@ const INITIAL_CUSTOMER_REVIEWS = [
     rating: 5,
     comment: 'Har doim shu yerdan yoqilg\'i quyaman, keshbek balansi bilan to\'lash juda qulay ekan!',
     created_at: new Date(Date.now() - 3600000 * 72).toISOString(),
+  },
+  {
+    id: 'rev-5',
+    user_name: 'Jasur B.',
+    rating: 5,
+    comment: 'AJOYIB! Stansiya xodimlari muomalasi juda yaxshi, yoqilg\'i hajmi ham aniq.',
+    created_at: new Date(Date.now() - 3600000 * 96).toISOString(),
+  },
+  {
+    id: 'rev-6',
+    user_name: 'Anvar H.',
+    rating: 5,
+    comment: 'Keshbek zudlik bilan balansga kelib tushdi. Tavsiya etaman!',
+    created_at: new Date(Date.now() - 3600000 * 120).toISOString(),
+  },
+  {
+    id: 'rev-7',
+    user_name: 'Bobur K.',
+    rating: 4,
+    comment: 'Xizmat ko\'rsatish darajasi a\'lo darajada.',
+    created_at: new Date(Date.now() - 3600000 * 150).toISOString(),
   }
 ];
 
 const CustomerReviews = () => {
-  const [reviews, setReviews] = useState(INITIAL_CUSTOMER_REVIEWS);
+  const [reviews, setReviews] = useState(DEFAULT_CUSTOMER_REVIEWS);
+  const [showAll, setShowAll] = useState(false);
 
-  // Foydalanuvchilar to'lovdan so'ng qoldirgan haqiqiy sharhlarini yuklash
   useEffect(() => {
+    fetchStationReviews();
+  }, []);
+
+  const fetchStationReviews = async () => {
+    // 1. Supabase station_reviews jadvalidan olishga urinish
     try {
-      const localReviews = JSON.parse(localStorage.getItem('keshbek_user_reviews') || '[]');
-      if (localReviews && localReviews.length > 0) {
-        setReviews((prev) => [...localReviews, ...prev]);
+      const { data, error } = await supabase
+        .from('station_reviews')
+        .select('*')
+        .order('created_at', { ascending: false });
+
+      if (!error && data && data.length > 0) {
+        setReviews((prev) => [...data, ...prev.filter((p) => !data.some((d) => d.id === p.id))]);
+        return;
       }
     } catch (e) {}
-  }, []);
+
+    // 2. Local storage dan olish (fallback)
+    try {
+      const local = JSON.parse(localStorage.getItem('keshbek_station_reviews') || '[]');
+      if (local && local.length > 0) {
+        setReviews((prev) => [...local, ...prev.filter((p) => !local.some((l) => l.id === p.id))]);
+      }
+    } catch (e) {}
+  };
 
   // O'rtacha reyting hisoblash
   const avgRating = reviews.length > 0
@@ -69,6 +111,9 @@ const CustomerReviews = () => {
     
     return `${d.getDate()}.${String(d.getMonth() + 1).padStart(2, '0')}.${d.getFullYear()}`;
   };
+
+  // Dastlab faqat 5 ta sharh ko'rsatiladi, "Yana o'qish" bosilsa hammasi ochiladi
+  const visibleReviews = showAll ? reviews : reviews.slice(0, 5);
 
   return (
     <div className="mx-4 mt-6 font-sans">
@@ -99,12 +144,12 @@ const CustomerReviews = () => {
         </div>
       </div>
 
-      {/* Mijozlar fikrlari ro'yxati */}
+      {/* Mijozlar fikrlari ro'yxati (Dastlab 5 ta) */}
       <div className="space-y-3">
-        {reviews.map((rev) => (
+        {visibleReviews.map((rev) => (
           <div
             key={rev.id}
-            className="bg-white rounded-2xl p-4 shadow-xs border border-gray-100 hover:border-gray-200 transition-all"
+            className="bg-white rounded-2xl p-4 shadow-xs border border-gray-100 hover:border-gray-200 transition-all animate-fadeIn"
           >
             {/* Yuqori qism: Ism, Yulduzlar, Tasdiqlangan nishon */}
             <div className="flex items-start justify-between gap-2 mb-2">
@@ -146,6 +191,28 @@ const CustomerReviews = () => {
           </div>
         ))}
       </div>
+
+      {/* Yana o'qish (Barcha sharhlarni ochish) link / tugma */}
+      {reviews.length > 5 && (
+        <div className="mt-4 text-center">
+          <button
+            onClick={() => setShowAll(!showAll)}
+            className="w-full py-3 px-4 bg-white border border-gray-200 rounded-2xl text-[13px] font-bold text-[#0f7b4c] hover:bg-[#e6f4ed] transition-all flex items-center justify-center gap-2 active:scale-95 shadow-xs cursor-pointer"
+          >
+            {showAll ? (
+              <>
+                <span>Qisqartirish</span>
+                <IoChevronUpOutline size={16} />
+              </>
+            ) : (
+              <>
+                <span>Yana o'qish (Barcha {reviews.length} ta sharh)</span>
+                <IoChevronDownOutline size={16} />
+              </>
+            )}
+          </button>
+        </div>
+      )}
 
     </div>
   );

@@ -326,7 +326,7 @@ const ProfilePage = () => {
 
           {/* Ismni tahrirlash tugmasi */}
           <button
-            onClick={() => { setEditNameVal(profile?.name || ''); setShowEditName(true); }}
+            onClick={openEditNameModal}
             className="w-full flex items-center gap-3 px-4 py-4 text-left active:bg-gray-50 border-b border-gray-100"
           >
             <div className="w-9 h-9 bg-[#f0f7f4] rounded-xl flex items-center justify-center text-[#0f7b4c] border border-emerald-100">

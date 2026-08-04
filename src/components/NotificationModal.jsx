@@ -54,7 +54,7 @@ const NotificationModal = ({ isOpen, onClose }) => {
                 )}
               </div>
               <p className="text-[12px] text-gray-400">
-                Tizim va keshbek bildirishnomalari
+                O'qilgan xabarlar 3 kundan so'ng o'chib ketadi
               </p>
             </div>
           </div>

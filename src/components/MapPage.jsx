@@ -59,7 +59,11 @@ const MapPage = () => {
       </div>
 
       {/* Shaxobcha kartasi */}
-      <div className="mx-4 mt-4 bg-white rounded-2xl shadow-sm overflow-hidden border border-gray-100">
+      <div className={`mx-4 mt-4 bg-white rounded-2xl overflow-hidden transition-all ${
+        station.is_open 
+          ? 'border border-[#0f7b4c] shadow-sm shadow-emerald-50' 
+          : 'border border-red-500 shadow-sm shadow-red-100'
+      }`}>
         {/* Yashil/Qizil indikator chiziq */}
         <div className={`h-1.5 ${station.is_open ? 'bg-[#0f7b4c]' : 'bg-red-500'}`} />
         <div className="p-4">
@@ -72,7 +76,11 @@ const MapPage = () => {
                 <span>{station.address}</span>
               </div>
             </div>
-            <span className={`text-[12px] font-bold px-2.5 py-1 rounded-full ${station.is_open ? 'bg-[#e8f5e9] text-[#0f7b4c]' : 'bg-red-50 text-red-500'}`}>
+            <span className={`text-[12px] font-bold px-2.5 py-1 rounded-full ${
+              station.is_open 
+                ? 'bg-emerald-50 text-[#0f7b4c] border border-emerald-200' 
+                : 'bg-red-100 text-red-600 border border-red-200'
+            }`}>
               {station.is_open ? '● Ochiq' : '● Yopiq'}
             </span>
           </div>

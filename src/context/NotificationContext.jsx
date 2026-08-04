@@ -4,20 +4,43 @@ import { useAuth } from './AuthContext';
 
 const NotificationContext = createContext(null);
 
-const READ_NOTIFS_KEY = 'keshbak_read_notification_ids';
+const READ_NOTIFS_KEY = 'keshbak_read_notification_map';
+const OLD_READ_NOTIFS_KEY = 'keshbak_read_notification_ids';
+const THREE_DAYS_MS = 3 * 24 * 60 * 60 * 1000; // 3 kun (millisekundda)
 
-const getReadNotificationIds = () => {
+const getReadNotificationMap = () => {
   try {
     const raw = localStorage.getItem(READ_NOTIFS_KEY);
-    return raw ? new Set(JSON.parse(raw)) : new Set();
+    if (!raw) {
+      // Eski array formatdan yangi map formatga o'tkazish (migratsiya)
+      const oldRaw = localStorage.getItem(OLD_READ_NOTIFS_KEY);
+      if (oldRaw) {
+        const oldArr = JSON.parse(oldRaw);
+        const map = {};
+        const now = Date.now();
+        if (Array.isArray(oldArr)) {
+          oldArr.forEach((id) => {
+            map[id] = now;
+          });
+        }
+        localStorage.setItem(READ_NOTIFS_KEY, JSON.stringify(map));
+        return map;
+      }
+      return {};
+    }
+    const map = JSON.parse(raw);
+    if (typeof map === 'object' && map !== null && !Array.isArray(map)) {
+      return map;
+    }
+    return {};
   } catch (e) {
-    return new Set();
+    return {};
   }
 };
 
-const saveReadNotificationIds = (readSet) => {
+const saveReadNotificationMap = (readMap) => {
   try {
-    localStorage.setItem(READ_NOTIFS_KEY, JSON.stringify(Array.from(readSet)));
+    localStorage.setItem(READ_NOTIFS_KEY, JSON.stringify(readMap));
   } catch (e) {}
 };
 
@@ -95,9 +118,13 @@ export const NotificationProvider = ({ children }) => {
         return;
       }
 
-      const readSet = getReadNotificationIds();
+      const readMap = getReadNotificationMap();
+      const now = Date.now();
+      const updatedReadMap = { ...readMap };
+      let mapChanged = false;
 
-      const items = (txData || []).map((tx) => {
+      const items = [];
+      (txData || []).forEach((tx) => {
         const isKirim = Number(tx.cashback_amount ?? tx.amount ?? 0) >= 0;
         const amtVal = Math.abs(Number(tx.cashback_amount || tx.amount || 0));
         
@@ -110,16 +137,40 @@ export const NotificationProvider = ({ children }) => {
           msgText = isKirim ? "Hisobingizga keshbek o'tkazildi" : "Keshbek ishlatildi";
         }
 
-        return {
+        const readTimestamp = readMap[tx.id];
+        const isRead = !!readTimestamp;
+
+        // O'qilgandan so'ng 3 kundan oshgan bildirishnomalarni o'chirish (ko'rsatmaslik)
+        if (isRead) {
+          const readAge = now - readTimestamp;
+          if (readAge > THREE_DAYS_MS) {
+            return;
+          }
+        }
+
+        items.push({
           id: tx.id,
           user_id: tx.user_id,
           title: isKirim ? "Kartangizga pul tushdi! 💳" : "Keshbek yechib olindi 💳",
           message: msgText,
           amount: amtVal,
-          is_read: readSet.has(tx.id),
+          is_read: isRead,
+          read_at: readTimestamp || null,
           created_at: tx.created_at
-        };
+        });
       });
+
+      // Eskirgan local storage keylarini tozalash
+      Object.keys(updatedReadMap).forEach((id) => {
+        if (now - updatedReadMap[id] > THREE_DAYS_MS) {
+          delete updatedReadMap[id];
+          mapChanged = true;
+        }
+      });
+
+      if (mapChanged) {
+        saveReadNotificationMap(updatedReadMap);
+      }
 
       setNotifications(items);
     } catch (err) {
@@ -133,24 +184,35 @@ export const NotificationProvider = ({ children }) => {
   const markAsRead = async (notificationId) => {
     if (!notificationId) return;
 
+    const now = Date.now();
+
     setNotifications((prev) =>
-      prev.map((n) => (n.id === notificationId ? { ...n, is_read: true } : n))
+      prev.map((n) => (n.id === notificationId ? { ...n, is_read: true, read_at: now } : n))
     );
 
-    const readSet = getReadNotificationIds();
-    readSet.add(notificationId);
-    saveReadNotificationIds(readSet);
+    const readMap = getReadNotificationMap();
+    readMap[notificationId] = now;
+    saveReadNotificationMap(readMap);
   };
 
   // Barcha bildirishnomalarni o'qilgan deb belgilash
   const markAllAsRead = async () => {
     if (!user?.id || unreadCount === 0) return;
 
-    const readSet = getReadNotificationIds();
-    notifications.forEach((n) => readSet.add(n.id));
-    saveReadNotificationIds(readSet);
+    const now = Date.now();
+    const readMap = getReadNotificationMap();
 
-    setNotifications((prev) => prev.map((n) => ({ ...n, is_read: true })));
+    notifications.forEach((n) => {
+      if (!n.is_read) {
+        readMap[n.id] = now;
+      }
+    });
+
+    saveReadNotificationMap(readMap);
+
+    setNotifications((prev) =>
+      prev.map((n) => ({ ...n, is_read: true, read_at: n.read_at || now }))
+    );
   };
 
   // Real-time obuna (transactions jadvaliga - Admin pul va SMS yuborganda)

@@ -12,68 +12,95 @@ export const AuthProvider = ({ children }) => {
   const loadProfile = async (userId, userObj = null) => {
     if (!userId) return;
 
+    const u = userObj || user;
+    let cleanPhone = null;
+    if (u?.phone) {
+      cleanPhone = u.phone;
+    } else if (u?.email) {
+      const emailParts = u.email.split('@')[0];
+      const phoneDigits = emailParts.split('_')[0].replace(/\D/g, '');
+      if (phoneDigits) {
+        cleanPhone = '+' + phoneDigits;
+      }
+    }
+
     // 1. ID bo'yicha profilni yuklash
-    let { data } = await supabase
+    let { data, error: selectErr } = await supabase
       .from('profiles')
       .select('*')
       .eq('id', userId)
       .maybeSingle();
 
+    if (selectErr) {
+      console.error("loadProfile select error:", selectErr);
+    }
+
     // 2. Agar ID bo'yicha topilmasa, telefon bo'yicha izlash
-    if (!data) {
-      const u = userObj || user;
-      let cleanPhone = null;
-      if (u?.phone) {
-        cleanPhone = u.phone;
-      } else if (u?.email) {
-        const phoneDigits = u.email.split('_')[0].split('@')[0].replace('+', '');
-        if (phoneDigits && /^\d+$/.test(phoneDigits)) {
-          cleanPhone = '+' + phoneDigits;
-        }
-      }
+    if (!data && cleanPhone) {
+      const { data: phoneProfile } = await supabase
+        .from('profiles')
+        .select('*')
+        .eq('phone', cleanPhone)
+        .maybeSingle();
 
-      if (cleanPhone) {
-        const { data: phoneProfile } = await supabase
-          .from('profiles')
-          .select('*')
-          .eq('phone', cleanPhone)
-          .maybeSingle();
-
-        if (phoneProfile) {
-          data = phoneProfile;
-          try {
-            await supabase.from('profiles').update({ id: userId }).eq('phone', cleanPhone);
-          } catch (e) {}
-        } else {
-          const cardNumber = 'KB-' + new Date().getFullYear() + '-' + Math.floor(Math.random() * 9000 + 1000);
-          const { data: createdProfile } = await supabase
-            .from('profiles')
-            .insert({
-              id:               userId,
-              name:             'Mijoz',
-              phone:            cleanPhone,
-              card_number:      cardNumber,
-              cashback_balance: 0,
-              level:            'Standart',
-            })
-            .select('*')
-            .maybeSingle();
-
-          if (createdProfile) data = createdProfile;
-        }
+      if (phoneProfile) {
+        data = phoneProfile;
+        try {
+          await supabase.from('profiles').update({ id: userId }).eq('phone', cleanPhone);
+        } catch (e) {}
       }
     }
 
-    // 3. Agarda profil bor-u, karta raqami bo'sh bo'lsa -> karta raqam yaratamiz
+    // 3. Agar profil topilmasa (masalan Supabase ma'lumotlari tozalangan bo'lsa) -> bazada yangi profil yaratamiz (upsert)
+    if (!data) {
+      const currentName = profile?.name && profile.name !== 'Mijoz' && profile.name !== "Noma'lum Mijoz" ? profile.name : 'Mijoz';
+      const cardNumber = profile?.card_number || ('KB-' + new Date().getFullYear() + '-' + Math.floor(Math.random() * 9000 + 1000));
+
+      const newPayload = {
+        id:               userId,
+        name:             currentName,
+        phone:            cleanPhone || '',
+        card_number:      cardNumber,
+        cashback_balance: profile?.cashback_balance ?? 0,
+        level:            profile?.level || 'Standart',
+      };
+      if (profile?.first_name) newPayload.first_name = profile.first_name;
+      if (profile?.last_name) newPayload.last_name = profile.last_name;
+
+      const { data: createdProfile, error: upsertErr } = await supabase
+        .from('profiles')
+        .upsert(newPayload, { onConflict: 'id' })
+        .select('*')
+        .maybeSingle();
+
+      if (createdProfile) {
+        data = createdProfile;
+      } else {
+        console.error("loadProfile upsert xatosi:", upsertErr);
+        delete newPayload.first_name;
+        delete newPayload.last_name;
+        const { data: minProfile } = await supabase
+          .from('profiles')
+          .upsert(newPayload, { onConflict: 'id' })
+          .select('*')
+          .maybeSingle();
+
+        data = minProfile || newPayload;
+      }
+    }
+
+    // 4. Agarda profil bor-u, karta raqami bo'sh bo'lsa -> karta raqam biriktiramiz
     if (data && !data.card_number) {
       const cardNumber = 'KB-' + new Date().getFullYear() + '-' + Math.floor(Math.random() * 9000 + 1000);
+      data.card_number = cardNumber;
       try {
-        await supabase.from('profiles').update({ card_number: cardNumber }).eq('id', data.id);
-        data.card_number = cardNumber;
+        await supabase.from('profiles').update({ card_number: cardNumber }).eq('id', data.id || userId);
       } catch (e) {}
     }
 
-    if (data) setProfile(data);
+    if (data) {
+      setProfile(data);
+    }
   };
 
   useEffect(() => {
@@ -217,7 +244,7 @@ export const AuthProvider = ({ children }) => {
           if (reSignIn.data?.user) userId = reSignIn.data.user.id;
         }
       } else if (signUpError) {
-        // Agar ushbu email allaqachon ro'yxatdan o'tgan bo'lsa (User already registered), muqobil akkaunt bilan bog'laymiz
+        // Agar ushbu email allaqachon ro'yxatdan o'tgan bo'lsa
         if (signUpError.message.includes('already registered') || signUpError.message.includes('already exists')) {
           const altEmail = `${phoneDigits}_v2@keshbak.uz`;
           const altSignUp = await supabase.auth.signUp({ email: altEmail, password });
@@ -245,7 +272,7 @@ export const AuthProvider = ({ children }) => {
       return { error: 'Tizimga kirishda kutilmagan xatolik yuz berdi.' };
     }
 
-    // 4. Profil mavjudligini tekshirish va yaratish / yangilash
+    // 4. Profil mavjudligini tekshirish va yaratish / yangilash (upsert)
     const { data: profileExists } = await supabase
       .from('profiles')
       .select('*')
@@ -254,45 +281,22 @@ export const AuthProvider = ({ children }) => {
 
     const cardNumber = profileExists?.card_number || ('KB-' + new Date().getFullYear() + '-' + Math.floor(Math.random() * 9000 + 1000));
 
-    if (!profileExists) {
-      const payload = {
-        id:               userId,
-        name:             finalName || 'Mijoz',
-        phone:            cleanPhone,
-        card_number:      cardNumber,
-        cashback_balance: 0,
-        level:            'Standart',
-      };
-      if (finalFirstName) payload.first_name = finalFirstName;
-      if (finalLastName) payload.last_name = finalLastName;
+    const payload = {
+      id:               userId,
+      name:             finalName || profileExists?.name || 'Mijoz',
+      phone:            cleanPhone,
+      card_number:      cardNumber,
+      cashback_balance: profileExists?.cashback_balance ?? 0,
+      level:            profileExists?.level || 'Standart',
+    };
+    if (finalFirstName) payload.first_name = finalFirstName;
+    if (finalLastName) payload.last_name = finalLastName;
 
-      let { error: insertErr } = await supabase.from('profiles').insert(payload);
-      if (insertErr) {
-        // agar first_name/last_name ustunlari DB ga qo'shilmagan bo'lsa fallback
-        delete payload.first_name;
-        delete payload.last_name;
-        await supabase.from('profiles').insert(payload);
-      }
-    } else {
-      const hasNoName = !profileExists.name;
-      const isDefaultName = profileExists.name === 'Mijoz';
-
-      const updateData = {
-        id: userId,
-        card_number: cardNumber,
-      };
-      if (finalName && (hasNoName || isDefaultName)) {
-        updateData.name = finalName;
-        if (finalFirstName) updateData.first_name = finalFirstName;
-        if (finalLastName) updateData.last_name = finalLastName;
-      }
-
-      let { error: updErr } = await supabase.from('profiles').update(updateData).eq('phone', cleanPhone);
-      if (updErr) {
-        delete updateData.first_name;
-        delete updateData.last_name;
-        await supabase.from('profiles').update(updateData).eq('phone', cleanPhone);
-      }
+    let { error: upsertErr } = await supabase.from('profiles').upsert(payload, { onConflict: 'id' });
+    if (upsertErr) {
+      delete payload.first_name;
+      delete payload.last_name;
+      await supabase.from('profiles').upsert(payload, { onConflict: 'id' });
     }
 
     await loadProfile(userId, { email, phone: cleanPhone });
@@ -321,63 +325,53 @@ export const AuthProvider = ({ children }) => {
     const fullName = [cleanFirst, cleanLast].filter(Boolean).join(' ').trim();
     if (!fullName) return { error: 'Ism bo\'sh bo\'lishi mumkin emas' };
 
-    const updatePayload = {
-      name: fullName,
-      first_name: cleanFirst || null,
-      last_name: cleanLast || null,
-    };
-
-    let targetId = profile?.id || user?.id;
-    let targetPhone = profile?.phone;
-    let updateSuccess = false;
-    let lastError = null;
-
-    if (targetId) {
-      const { error } = await supabase
-        .from('profiles')
-        .update(updatePayload)
-        .eq('id', targetId);
-
-      if (!error) {
-        updateSuccess = true;
-      } else {
-        const fb = await supabase
-          .from('profiles')
-          .update({ name: fullName })
-          .eq('id', targetId);
-        if (!fb.error) updateSuccess = true;
-        else lastError = fb.error.message;
-      }
+    const targetId = profile?.id || user?.id;
+    let cleanPhone = profile?.phone || user?.phone || '';
+    if (!cleanPhone && user?.email) {
+      const emailParts = user.email.split('@')[0];
+      const phoneDigits = emailParts.split('_')[0].replace(/\D/g, '');
+      if (phoneDigits) cleanPhone = '+' + phoneDigits;
     }
 
-    if (!updateSuccess && targetPhone) {
-      const { error } = await supabase
-        .from('profiles')
-        .update(updatePayload)
-        .eq('phone', targetPhone);
+    const cardNumber = profile?.card_number || ('KB-' + new Date().getFullYear() + '-' + Math.floor(Math.random() * 9000 + 1000));
 
-      if (!error) {
-        updateSuccess = true;
-      } else {
-        const fb = await supabase
-          .from('profiles')
-          .update({ name: fullName })
-          .eq('phone', targetPhone);
-        if (!fb.error) updateSuccess = true;
-        else lastError = fb.error.message;
-      }
-    }
-
-    // Har doim lokal profil holatini darhol yangilaymiz
+    // 1. Local profildagi ism va karta raqamni darhol yangilaymiz (UI darhol modalni yopishi uchun)
     setProfile(prev => ({
-      ...prev,
+      ...(prev || {}),
+      id: targetId,
       name: fullName,
       first_name: cleanFirst || null,
       last_name: cleanLast || null,
+      card_number: prev?.card_number || cardNumber,
+      phone: prev?.phone || cleanPhone || '',
+      cashback_balance: prev?.cashback_balance ?? 0,
+      level: prev?.level || 'Standart',
     }));
 
-    if (targetId || user?.id) {
-      await loadProfile(targetId || user?.id);
+    // 2. DB ga upsert qilamiz
+    const upsertPayload = {
+      id: targetId,
+      name: fullName,
+      phone: cleanPhone || '',
+      card_number: cardNumber,
+      cashback_balance: profile?.cashback_balance ?? 0,
+      level: profile?.level || 'Standart',
+    };
+    if (cleanFirst) upsertPayload.first_name = cleanFirst;
+    if (cleanLast) upsertPayload.last_name = cleanLast;
+
+    let { error: upsertErr } = await supabase
+      .from('profiles')
+      .upsert(upsertPayload, { onConflict: 'id' });
+
+    if (upsertErr) {
+      console.error("updateProfileName upsert xatosi:", upsertErr);
+      delete upsertPayload.first_name;
+      delete upsertPayload.last_name;
+      const fb = await supabase.from('profiles').upsert(upsertPayload, { onConflict: 'id' });
+      if (fb.error && cleanPhone) {
+        await supabase.from('profiles').update({ name: fullName }).eq('phone', cleanPhone);
+      }
     }
 
     return { success: true };

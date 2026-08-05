@@ -15,10 +15,18 @@ export const useTransactions = (userId) => {
       .from('transactions')
       .select('*')
       .eq('user_id', userId)
+      .or('amount.gt.0,cashback_amount.neq.0')
       .order('created_at', { ascending: false });
 
-    if (error) setError(error.message);
-    else       setTransactions(data ?? []);
+    if (error) {
+      setError(error.message);
+    } else {
+      // Faqat haqiqiy pul amallarini olamiz (0 so'mlik fake SMS yozuvlari o'tmaydi)
+      const valid = (data ?? []).filter(
+        (t) => Math.abs(Number(t.amount || 0)) > 0 || Math.abs(Number(t.cashback_amount || 0)) > 0
+      );
+      setTransactions(valid);
+    }
 
     setLoading(false);
   };
@@ -26,7 +34,7 @@ export const useTransactions = (userId) => {
   useEffect(() => {
     fetchTransactions();
 
-    // Real-time — yangi tranzaksiya qo'shilsa darhol yangilanadi
+    // Real-time — yangi pul amali (transactions) qo'shilsa darhol yangilanadi
     const channel = supabase
       .channel('transactions_changes')
       .on('postgres_changes', {
@@ -34,7 +42,14 @@ export const useTransactions = (userId) => {
         schema: 'public',
         table:  'transactions',
         filter: `user_id=eq.${userId}`,
-      }, () => fetchTransactions())
+      }, (payload) => {
+        const tx = payload?.new;
+        if (tx) {
+          const amtVal = Math.abs(Number(tx.cashback_amount || tx.amount || 0));
+          if (amtVal === 0) return; // 0 so'mlik fake SMS yozuvlarini tranzaksiya sifatida qabul qilmaymiz
+        }
+        fetchTransactions();
+      })
       .subscribe();
 
     return () => supabase.removeChannel(channel);

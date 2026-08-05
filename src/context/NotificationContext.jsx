@@ -98,7 +98,7 @@ export const NotificationProvider = ({ children }) => {
   // Unread count
   const unreadCount = notifications.filter((n) => !n.is_read).length;
 
-  // Supabase 'transactions' jadvalidan bildirishnomalar ro'yxatini yuklash
+  // Supabase 'notifications' va 'transactions' jadvallaridan bildirishnomalarni yuklash
   const fetchNotifications = useCallback(async () => {
     if (!user?.id) {
       setNotifications([]);
@@ -107,16 +107,20 @@ export const NotificationProvider = ({ children }) => {
 
     setLoading(true);
     try {
-      const { data: txData, error } = await supabase
+      // 1. Fetch from 'notifications' table (SMS va ommaviy xabarnomalar)
+      const { data: notifData } = await supabase
+        .from('notifications')
+        .select('*')
+        .or(`user_id.eq.${user.id},user_id.is.null`)
+        .order('created_at', { ascending: false });
+
+      // 2. Fetch from 'transactions' table (haqiqiy keshbek tushganda/yechilganda)
+      const { data: txData } = await supabase
         .from('transactions')
         .select('*')
         .eq('user_id', user.id)
+        .or('amount.gt.0,cashback_amount.neq.0')
         .order('created_at', { ascending: false });
-
-      if (error) {
-        setNotifications([]);
-        return;
-      }
 
       const readMap = getReadNotificationMap();
       const now = Date.now();
@@ -124,32 +128,50 @@ export const NotificationProvider = ({ children }) => {
       let mapChanged = false;
 
       const items = [];
-      (txData || []).forEach((tx) => {
-        const isKirim = Number(tx.cashback_amount ?? tx.amount ?? 0) >= 0;
-        const amtVal = Math.abs(Number(tx.cashback_amount || tx.amount || 0));
-        
-        // SMS/Izoh textini qr_data, comment yoki description dan olish
-        let msgText = tx.qr_data || tx.comment || tx.description || '';
-        if (msgText.startsWith('{"') || msgText.startsWith('http')) {
-          msgText = isKirim ? "Hisobingizga keshbek o'tkazildi" : "Keshbek ishlatildi";
-        }
-        if (!msgText) {
-          msgText = isKirim ? "Hisobingizga keshbek o'tkazildi" : "Keshbek ishlatildi";
-        }
 
-        const readTimestamp = readMap[tx.id];
-        const isRead = !!readTimestamp;
+      // Process notifications table items
+      (notifData || []).forEach((n) => {
+        const readTimestamp = readMap[n.id];
+        const isRead = !!readTimestamp || !!n.is_read;
 
-        // O'qilgandan so'ng 3 kundan oshgan bildirishnomalarni o'chirish (ko'rsatmaslik)
-        if (isRead) {
-          const readAge = now - readTimestamp;
-          if (readAge > THREE_DAYS_MS) {
-            return;
-          }
+        if (isRead && readTimestamp) {
+          if (now - readTimestamp > THREE_DAYS_MS) return;
         }
 
         items.push({
-          id: tx.id,
+          id: n.id,
+          user_id: n.user_id,
+          title: n.title || "Yangi Xabarnoma 🔔",
+          message: n.message || "",
+          category: n.category || "AKSIYA",
+          amount: 0,
+          is_read: isRead,
+          read_at: readTimestamp || null,
+          created_at: n.created_at
+        });
+      });
+
+      // Process valid transactions (> 0 amount)
+      (txData || []).forEach((tx) => {
+        const amtVal = Math.abs(Number(tx.cashback_amount || tx.amount || 0));
+        if (amtVal === 0) return; // Ignore 0 amount fake SMS records if any exist in transactions
+
+        const isKirim = Number(tx.cashback_amount ?? tx.amount ?? 0) >= 0;
+        let msgText = tx.qr_data || tx.comment || tx.description || '';
+        if (msgText.startsWith('{"') || msgText.startsWith('http') || !msgText) {
+          msgText = isKirim ? "Hisobingizga keshbek o'tkazildi" : "Keshbek ishlatildi";
+        }
+
+        const txNotifId = `tx_${tx.id}`;
+        const readTimestamp = readMap[txNotifId];
+        const isRead = !!readTimestamp;
+
+        if (isRead && readTimestamp) {
+          if (now - readTimestamp > THREE_DAYS_MS) return;
+        }
+
+        items.push({
+          id: txNotifId,
           user_id: tx.user_id,
           title: isKirim ? "Kartangizga pul tushdi! 💳" : "Keshbek yechib olindi 💳",
           message: msgText,
@@ -159,6 +181,9 @@ export const NotificationProvider = ({ children }) => {
           created_at: tx.created_at
         });
       });
+
+      // Sort combined list descending by created_at
+      items.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
 
       // Eskirgan local storage keylarini tozalash
       Object.keys(updatedReadMap).forEach((id) => {
@@ -174,7 +199,7 @@ export const NotificationProvider = ({ children }) => {
 
       setNotifications(items);
     } catch (err) {
-      setNotifications([]);
+      console.error('Error fetching notifications:', err);
     } finally {
       setLoading(false);
     }
@@ -215,7 +240,7 @@ export const NotificationProvider = ({ children }) => {
     );
   };
 
-  // Real-time obuna (transactions jadvaliga - Admin pul va SMS yuborganda)
+  // Real-time obuna (notifications va transactions jadvallariga)
   useEffect(() => {
     if (!user?.id) {
       setNotifications([]);
@@ -226,9 +251,41 @@ export const NotificationProvider = ({ children }) => {
 
     let channel = null;
     try {
-      const channelName = `realtime_user_tx_${user.id}_${Date.now()}`;
+      const channelName = `realtime_user_notif_${user.id}_${Date.now()}`;
       channel = supabase.channel(channelName);
       
+      // 1. Realtime notification table insert
+      channel.on(
+        'postgres_changes',
+        {
+          event: 'INSERT',
+          schema: 'public',
+          table: 'notifications',
+        },
+        (payload) => {
+          const n = payload.new;
+          if (n.user_id && n.user_id !== user.id) return;
+          playNotificationSound();
+          triggerVibration();
+
+          const newNotif = {
+            id: n.id,
+            user_id: n.user_id,
+            title: n.title || "Yangi Xabarnoma 🔔",
+            message: n.message || "",
+            category: n.category || "AKSIYA",
+            amount: 0,
+            is_read: false,
+            created_at: n.created_at
+          };
+
+          setLatestToast(newNotif);
+          setTimeout(() => setLatestToast(null), 5000);
+          setNotifications((prev) => [newNotif, ...prev.filter((item) => item.id !== newNotif.id)]);
+        }
+      );
+
+      // 2. Realtime transaction table insert (> 0 amount)
       channel.on(
         'postgres_changes',
         {
@@ -239,22 +296,20 @@ export const NotificationProvider = ({ children }) => {
         },
         (payload) => {
           const tx = payload.new;
+          const amtVal = Math.abs(Number(tx.cashback_amount || tx.amount || 0));
+          if (amtVal === 0) return; // Skip zero amount SMS
+
           playNotificationSound();
           triggerVibration();
 
           const isKirim = Number(tx.cashback_amount ?? tx.amount ?? 0) >= 0;
-          const amtVal = Math.abs(Number(tx.cashback_amount || tx.amount || 0));
-
           let msgText = tx.qr_data || tx.comment || tx.description || '';
-          if (msgText.startsWith('{"') || msgText.startsWith('http')) {
-            msgText = isKirim ? "Hisobingizga pul o'tkazildi" : "Keshbek ishlatildi";
-          }
-          if (!msgText) {
+          if (msgText.startsWith('{"') || msgText.startsWith('http') || !msgText) {
             msgText = isKirim ? "Hisobingizga pul o'tkazildi" : "Keshbek ishlatildi";
           }
 
           const newNotif = {
-            id: tx.id,
+            id: `tx_${tx.id}`,
             user_id: tx.user_id,
             title: isKirim ? "Kartangizga pul tushdi! 💳" : "Keshbek yechib olindi 💳",
             message: msgText,

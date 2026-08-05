@@ -81,7 +81,7 @@ const HistoryPage = () => {
               Sof Keshbek Balansi
             </span>
             <span className="text-white/70 text-xs font-medium">
-              {transactions.length} ta operatsiya
+              {validTransactions.length} ta operatsiya
             </span>
           </div>
 
@@ -121,7 +121,7 @@ const HistoryPage = () => {
                 : 'text-gray-500 hover:text-gray-900'
             }`}
           >
-            Barchasi ({transactions.length})
+            Barchasi ({validTransactions.length})
           </button>
           <button
             onClick={() => setActiveTab('KIRIM')}

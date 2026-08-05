@@ -21,12 +21,14 @@ const formatDate = (iso) => {
   return `${day}.${month}.${year} ${hour}:${minute}`;
 };
 
-const HomePage = () => {
+const HomePage = ({ setActiveTab }) => {
   const { user, profile, refreshProfile } = useAuth();
   const { transactions, addTransaction } = useTransactions(user?.id);
   const { station } = useStationSettings();
   const [showScanner, setShowScanner] = useState(false);
   const [scanMsg, setScanMsg] = useState('');
+
+  const isLastNameMissing = profile && (!profile.last_name || profile.last_name.trim() === '') && profile.name && profile.name !== 'Mijoz';
 
   // Faqat haqiqiy pul tushgan yoki yechilgan tranzaksiyalar (0 so'mlik oddiy xabarlar o'tmaydi)
   const validTransactions = transactions.filter(
@@ -92,6 +94,25 @@ const HomePage = () => {
       )}
 
       <div className="flex-1 px-4 pt-6 bg-gray-50 pb-6 w-full font-sans">
+
+        {/* Familiya qo'shish banner (Ogohlantirish) */}
+        {isLastNameMissing && (
+          <div className="mb-4 p-3.5 bg-amber-50 border border-amber-200 rounded-2xl flex items-center justify-between gap-3 shadow-xs">
+            <div className="flex items-center gap-2.5">
+              <span className="text-xl">⚠️</span>
+              <div>
+                <p className="text-[13px] font-extrabold text-amber-900 leading-tight">Familiyangizni qo'shing</p>
+                <p className="text-[11px] text-amber-700 mt-0.5">KeshBak xizmatidan to'liq foydalanish uchun familiya shart</p>
+              </div>
+            </div>
+            <button
+              onClick={() => setActiveTab && setActiveTab('profile')}
+              className="px-3 py-1.5 bg-amber-500 hover:bg-amber-600 active:scale-95 text-white font-bold text-[12px] rounded-xl transition-all shrink-0 cursor-pointer shadow-xs"
+            >
+              Qo'shish
+            </button>
+          </div>
+        )}
 
         {/* Scan xabari */}
         {scanMsg && (

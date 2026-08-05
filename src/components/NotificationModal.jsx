@@ -1,4 +1,3 @@
-import React from 'react';
 import { 
   Bell, 
   CheckCheck, 
@@ -6,12 +5,15 @@ import {
   Wallet, 
   Clock, 
   Sparkles,
-  Inbox
+  Inbox,
+  UserPlus
 } from 'lucide-react';
 import { useNotifications } from '../context/NotificationContext';
+import { useAuth } from '../context/AuthContext';
 import { formatNotificationTime, formatAmount } from '../utils/formatDate';
 
 const NotificationModal = ({ isOpen, onClose }) => {
+  const { profile } = useAuth();
   const { 
     notifications, 
     unreadCount, 
@@ -21,6 +23,8 @@ const NotificationModal = ({ isOpen, onClose }) => {
   } = useNotifications();
 
   if (!isOpen) return null;
+
+  const isLastNameMissing = profile && (!profile.last_name || profile.last_name.trim() === '') && profile.name && profile.name !== 'Mijoz';
 
   return (
     <div className="fixed inset-0 z-[9999] flex justify-center items-start sm:pt-16 p-0 sm:p-4 animate-fadeIn">
@@ -38,7 +42,7 @@ const NotificationModal = ({ isOpen, onClose }) => {
           <div className="flex items-center gap-2.5">
             <div className="w-9 h-9 bg-[#f0f7f4] text-[#0f7b4c] rounded-2xl flex items-center justify-center relative">
               <Bell className="w-5 h-5" />
-              {unreadCount > 0 && (
+              {(unreadCount > 0 || isLastNameMissing) && (
                 <span className="absolute -top-1 -right-1 w-2.5 h-2.5 bg-red-500 rounded-full ring-2 ring-white animate-pulse" />
               )}
             </div>
@@ -47,9 +51,9 @@ const NotificationModal = ({ isOpen, onClose }) => {
                 <h3 className="font-extrabold text-[17px] text-gray-900 leading-tight">
                   Bildirishnomalar
                 </h3>
-                {unreadCount > 0 && (
+                {(unreadCount > 0 || isLastNameMissing) && (
                   <span className="bg-[#0f7b4c] text-white text-[11px] font-bold px-2 py-0.5 rounded-full">
-                    {unreadCount} ta yangi
+                    {unreadCount + (isLastNameMissing ? 1 : 0)} ta yangi
                   </span>
                 )}
               </div>
@@ -80,8 +84,27 @@ const NotificationModal = ({ isOpen, onClose }) => {
         </div>
 
         {/* Modal Kontent Ro'yxati */}
-        <div className="flex-1 overflow-y-auto p-4 space-y-3 divide-y divide-gray-50">
+        <div className="flex-1 overflow-y-auto p-4 space-y-3">
           
+          {/* FAMILIYA QO'SHISH BILDIRISHNOMASI (OGOHLANTIRISH) */}
+          {isLastNameMissing && (
+            <div className="bg-amber-50 border-2 border-amber-200 rounded-2xl p-4 mb-3 shadow-xs">
+              <div className="flex items-start gap-3">
+                <div className="w-10 h-10 bg-amber-500 text-white rounded-xl flex items-center justify-center shrink-0 shadow-sm mt-0.5">
+                  <UserPlus className="w-5 h-5" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <h4 className="font-extrabold text-[14px] text-amber-900 leading-tight">
+                    Familiyangizni qo'shing!
+                  </h4>
+                  <p className="text-[12px] text-amber-800 mt-1 leading-relaxed">
+                    KeshBak xizmatidan to'liq foydalanish va keshbeklarni to'g'ri olish uchun iltimos profilingizga familiyangizni ham qo'shing.
+                  </p>
+                </div>
+              </div>
+            </div>
+          )}
+
           {loading && notifications.length === 0 ? (
             <div className="py-12 flex flex-col items-center justify-center gap-3">
               <div className="w-8 h-8 border-3 border-[#0f7b4c]/20 border-t-[#0f7b4c] rounded-full animate-spin" />

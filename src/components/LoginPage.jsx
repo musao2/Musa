@@ -9,15 +9,16 @@ const LoginPage = () => {
   const { verifyOTPAndLogin } = useAuth();
   const { station } = useStationSettings();
 
-  const [mode, setMode]       = useState('login'); // 'login' | 'register'
-  const [step, setStep]       = useState(1);       // 1: Telefon/Ism kiritish, 2: Kod kiritish
+  const [mode, setMode]             = useState('login'); // 'login' | 'register'
+  const [step, setStep]             = useState(1);       // 1: Telefon/Ism kiritish, 2: Kod kiritish
   
-  const [phone, setPhone]     = useState('+998');
-  const [name, setName]       = useState('');
-  const [code, setCode]       = useState('');
+  const [phone, setPhone]           = useState('+998');
+  const [firstName, setFirstName]   = useState('');
+  const [lastName, setLastName]     = useState('');
+  const [code, setCode]             = useState('');
   
-  const [error, setError]     = useState('');
-  const [loading, setLoading] = useState(false);
+  const [error, setError]           = useState('');
+  const [loading, setLoading]       = useState(false);
 
   // Telefon raqamini chiroyli formatlash (+998 90 123 45 67)
   const handlePhoneChange = (inputVal) => {
@@ -67,9 +68,15 @@ const LoginPage = () => {
       return;
     }
 
-    if (mode === 'register' && !name.trim()) {
-      setError('Iltimos, ismingizni kiriting.');
-      return;
+    if (mode === 'register') {
+      if (!firstName.trim()) {
+        setError('Iltimos, ismingizni kiriting.');
+        return;
+      }
+      if (!lastName.trim()) {
+        setError('Iltimos, familiyangizni ham kiriting.');
+        return;
+      }
     }
 
     setLoading(true);
@@ -96,7 +103,7 @@ const LoginPage = () => {
 
     setLoading(true);
     const cleanPhone = '+' + phone.replace(/\D/g, '');
-    const res = await verifyOTPAndLogin(cleanPhone, code, name);
+    const res = await verifyOTPAndLogin(cleanPhone, code, { firstName, lastName });
     setLoading(false);
 
     if (res.error) {
@@ -146,17 +153,30 @@ const LoginPage = () => {
           <form onSubmit={handleSendCode} className="flex flex-col gap-4">
             
             {mode === 'register' && (
-              <div className="relative">
-                <IoPersonOutline size={18} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400" />
-                <input
-                  type="text"
-                  placeholder="Ismingiz va familiyangiz"
-                  value={name}
-                  onChange={e => setName(e.target.value)}
-                  required
-                  className="w-full h-12 pl-10 pr-4 bg-gray-50 border border-gray-200 rounded-xl text-[14px] font-semibold text-gray-800 outline-none focus:border-[#0f7b4c] transition-colors"
-                />
-              </div>
+              <>
+                <div className="relative">
+                  <IoPersonOutline size={18} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400" />
+                  <input
+                    type="text"
+                    placeholder="Ismingiz (masalan: Ali)"
+                    value={firstName}
+                    onChange={e => setFirstName(e.target.value)}
+                    required
+                    className="w-full h-12 pl-10 pr-4 bg-gray-50 border border-gray-200 rounded-xl text-[14px] font-semibold text-gray-800 outline-none focus:border-[#0f7b4c] transition-colors"
+                  />
+                </div>
+                <div className="relative">
+                  <IoPersonOutline size={18} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400" />
+                  <input
+                    type="text"
+                    placeholder="Familiyangiz (masalan: Valiyev)"
+                    value={lastName}
+                    onChange={e => setLastName(e.target.value)}
+                    required
+                    className="w-full h-12 pl-10 pr-4 bg-gray-50 border border-gray-200 rounded-xl text-[14px] font-semibold text-gray-800 outline-none focus:border-[#0f7b4c] transition-colors"
+                  />
+                </div>
+              </>
             )}
 
             <div className="relative">

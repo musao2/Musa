@@ -15,22 +15,36 @@ const AppContent = () => {
   const { latestToast, setLatestToast } = useNotifications();
   const [activeTab, setActiveTab] = useState('home');
   
-  // Majburiy ism so'rash state'lari
-  const [mandatoryName, setMandatoryName] = useState('');
-  const [nameError, setNameError]         = useState('');
-  const [savingName, setSavingName]       = useState(false);
+  // Majburiy ism va familiya so'rash state'lari
+  const [mandatoryFirstName, setMandatoryFirstName] = useState('');
+  const [mandatoryLastName, setMandatoryLastName]   = useState('');
+  const [nameError, setNameError]                   = useState('');
+  const [savingName, setSavingName]                 = useState(false);
 
   const userDisplayName = profile?.name;
-  const isNameMissing = profile && (!userDisplayName || userDisplayName.trim() === '' || userDisplayName === 'Mijoz' || userDisplayName === 'Noma\'lum Mijoz');
+  // Telefon raqamiga biriktirilgan saqlangan ism
+  const profilePhone = profile?.phone || user?.phone || user?.email?.split('@')[0]?.split('_')[0]?.replace(/\D/g, '');
+  const phoneDigits = profilePhone ? profilePhone.replace(/\D/g, '') : '';
+  const phoneStoredName = phoneDigits ? localStorage.getItem(`keshbak_name_${phoneDigits}`) : null;
+  const validPhoneStoredName = phoneStoredName && phoneStoredName !== 'Mijoz' && phoneStoredName.trim() !== '';
+
+  const isNameMissing = profile && !validPhoneStoredName && (!userDisplayName || userDisplayName.trim() === '' || userDisplayName === 'Mijoz' || userDisplayName === 'Noma\'lum Mijoz');
 
   const handleSaveMandatoryName = async (e) => {
     e.preventDefault();
-    if (!mandatoryName.trim()) {
-      setNameError('Iltimos, ism va familiyangizni kiriting!');
+    if (!mandatoryFirstName.trim()) {
+      setNameError('Iltimos, ismingizni kiriting!');
+      return;
+    }
+    if (!mandatoryLastName.trim()) {
+      setNameError('Iltimos, familiyangizni ham kiriting!');
       return;
     }
     setSavingName(true);
-    const res = await updateProfileName(mandatoryName.trim());
+    const res = await updateProfileName({
+      firstName: mandatoryFirstName.trim(),
+      lastName: mandatoryLastName.trim()
+    });
     setSavingName(false);
     if (res?.error) {
       setNameError(res.error);
@@ -56,37 +70,45 @@ const AppContent = () => {
 
   const renderPage = () => {
     switch (activeTab) {
-      case 'home':    return <HomePage />;
+      case 'home':    return <HomePage setActiveTab={setActiveTab} />;
       case 'history': return <HistoryPage />;
       case 'map':     return <MapPage />;
       case 'profile': return <ProfilePage />;
-      default:        return <HomePage />;
+      default:        return <HomePage setActiveTab={setActiveTab} />;
     }
   };
 
   return (
     <div className="relative min-h-screen bg-gray-50 flex flex-col font-sans overflow-x-hidden">
       
-      {/* MAJBURIS ISM KIRITISH MODALI */}
+      {/* MAJBURIS ISM VA FAMILIYA KIRITISH MODALI */}
       {isNameMissing && (
         <div className="fixed inset-0 z-[9999] bg-black/80 backdrop-blur-md flex items-center justify-center p-4">
           <div className="bg-white rounded-3xl p-6 w-full max-w-sm shadow-2xl flex flex-col items-center text-center animate-scale-up">
             <div className="w-14 h-14 bg-[#0f7b4c]/10 text-[#0f7b4c] rounded-2xl flex items-center justify-center mb-3">
               <span className="text-2xl font-bold">👤</span>
             </div>
-            <h2 className="text-xl font-extrabold text-gray-900">Ismingizni kiriting</h2>
+            <h2 className="text-xl font-extrabold text-gray-900">Ma'lumotlaringizni kiriting</h2>
             <p className="text-gray-500 text-[13px] mt-1.5 mb-5 leading-relaxed">
-              KeshBak xizmatidan to'liq foydalanish va keshbeklarni olish uchun ismingizni kiritishingiz shart.
+              KeshBak xizmatidan to'liq foydalanish uchun ismingiz va familiyangizni kiriting.
             </p>
             <form onSubmit={handleSaveMandatoryName} className="w-full flex flex-col gap-3">
               <input
                 type="text"
-                placeholder="Ism va familiyangiz"
-                value={mandatoryName}
-                onChange={e => setMandatoryName(e.target.value)}
+                placeholder="Ismingiz (masalan: Ali)"
+                value={mandatoryFirstName}
+                onChange={e => setMandatoryFirstName(e.target.value)}
                 required
                 autoFocus
-                className="w-full h-12 px-4 bg-gray-50 border border-gray-200 rounded-xl text-[14px] outline-none focus:border-[#0f7b4c] text-center font-bold text-gray-800 transition-colors"
+                className="w-full h-12 px-4 bg-gray-50 border border-gray-200 rounded-xl text-[14px] outline-none focus:border-[#0f7b4c] font-bold text-gray-800 transition-colors"
+              />
+              <input
+                type="text"
+                placeholder="Familiyangiz (masalan: Valiyev)"
+                value={mandatoryLastName}
+                onChange={e => setMandatoryLastName(e.target.value)}
+                required
+                className="w-full h-12 px-4 bg-gray-50 border border-gray-200 rounded-xl text-[14px] outline-none focus:border-[#0f7b4c] font-bold text-gray-800 transition-colors"
               />
               {nameError && (
                 <p className="text-red-500 text-[12px] font-medium">{nameError}</p>

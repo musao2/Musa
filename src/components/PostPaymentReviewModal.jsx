@@ -43,6 +43,7 @@ const PostPaymentReviewModal = ({ isOpen, onClose }) => {
     }
 
     // 2. Supabase station_reviews jadvalidan oxirgi sharh vaqtini tekshirish
+    // Jadval mavjud bo'lmasa xato consola chiqmaydi – jim o'tiladi
     try {
       const { data, error } = await supabase
         .from('station_reviews')
@@ -62,7 +63,9 @@ const PostPaymentReviewModal = ({ isOpen, onClose }) => {
           return;
         }
       }
-    } catch (e) {}
+    } catch {
+      // station_reviews jadvali yo'q – jim o'tiladi
+    }
 
     setAlreadyReviewedThisWeek(false);
   };
@@ -85,6 +88,7 @@ const PostPaymentReviewModal = ({ isOpen, onClose }) => {
     };
 
     // 1. Supabase station_reviews jadvaliga saqlash
+    // Jadval mavjud bo'lmasa xato consola chiqmaydi – jim o'tiladi
     try {
       await supabase
         .from('station_reviews')
@@ -95,7 +99,9 @@ const PostPaymentReviewModal = ({ isOpen, onClose }) => {
           comment: comment.trim(),
           created_at: new Date().toISOString(),
         }]);
-    } catch (e) {}
+    } catch {
+      // station_reviews jadvali yo'q – localStorage ga saqlanadi
+    }
 
     // 2. Local storage-ga saqlash va haftalik cheklov taymerini o'rnatish
     try {

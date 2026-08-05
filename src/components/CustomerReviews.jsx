@@ -71,6 +71,7 @@ const CustomerReviews = () => {
 
   const fetchStationReviews = async () => {
     // 1. Supabase station_reviews jadvalidan olishga urinish
+    // Jadval mavjud bo'lmasa xato consola chiqmaydi – jim o'tiladi
     try {
       const { data, error } = await supabase
         .from('station_reviews')
@@ -81,7 +82,9 @@ const CustomerReviews = () => {
         setReviews((prev) => [...data, ...prev.filter((p) => !data.some((d) => d.id === p.id))]);
         return;
       }
-    } catch (e) {}
+    } catch {
+      // station_reviews jadvali yo'q – xato ko'rsatmasdan o'tamiz
+    }
 
     // 2. Local storage dan olish (fallback)
     try {
@@ -89,7 +92,7 @@ const CustomerReviews = () => {
       if (local && local.length > 0) {
         setReviews((prev) => [...local, ...prev.filter((p) => !local.some((l) => l.id === p.id))]);
       }
-    } catch (e) {}
+    } catch {}
   };
 
   // O'rtacha reyting hisoblash

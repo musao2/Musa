@@ -3,161 +3,116 @@ import { supabase } from '../lib/supabase';
 
 const AuthContext = createContext(null);
 
-// Local Storage kesh yordamchi funksiyalari
-const GET_CACHED_PROFILE = (userId, phone) => {
-  try {
-    const key = `keshbak_profile_${userId || phone || 'guest'}`;
-    const raw = localStorage.getItem(key) || localStorage.getItem('keshbak_profile_global');
-    if (raw) return JSON.parse(raw);
-  } catch (e) {}
-  return null;
+// ─── LOCAL STORAGE HELPERS ──────────────────────────────────────────────────
+
+const getDigits = (phone) => (phone || '').replace(/\D/g, '');
+
+// Karta raqamini telefon raqamiga biriktirib saqlash
+const getStoredCard = (phone) => {
+  const d = getDigits(phone);
+  if (!d) return null;
+  try { return localStorage.getItem(`keshbak_card_${d}`) || null; } catch { return null; }
 };
 
-const SAVE_CACHED_PROFILE = (userId, phone, profileData) => {
-  try {
-    if (!profileData) return;
-    const dataStr = JSON.stringify(profileData);
-    if (userId) localStorage.setItem(`keshbak_profile_${userId}`, dataStr);
-    if (phone) {
-      localStorage.setItem(`keshbak_profile_${phone}`, dataStr);
-      // Telefon raqamiga biriktirilgan ism – qayta kirganida ishlatilinadi
-      const digits = phone.replace(/\D/g, '');
-      if (digits && profileData.name && profileData.name !== 'Mijoz') {
-        localStorage.setItem(`keshbak_name_${digits}`, profileData.name);
-        if (profileData.first_name) localStorage.setItem(`keshbak_fname_${digits}`, profileData.first_name);
-        if (profileData.last_name) localStorage.setItem(`keshbak_lname_${digits}`, profileData.last_name);
-      }
-    }
-    localStorage.setItem('keshbak_profile_global', dataStr);
-  } catch (e) {}
+const saveStoredCard = (phone, card) => {
+  const d = getDigits(phone);
+  if (!d || !card || card === '—') return;
+  try { localStorage.setItem(`keshbak_card_${d}`, card); } catch {}
 };
 
-const getStoredCardNumber = (phone) => {
-  if (!phone) return null;
-  const digits = phone.replace(/\D/g, '');
-  if (!digits) return null;
+// Ism/familiyani telefon raqamiga biriktirib saqlash (FAQAT localStorage)
+const getStoredName = (phone) => {
+  const d = getDigits(phone);
+  if (!d) return { name: null, first: null, last: null };
   try {
-    return localStorage.getItem(`keshbak_card_${digits}`) || localStorage.getItem(`keshbak_card_number_${digits}`);
-  } catch (e) {
-    return null;
-  }
+    return {
+      name:  localStorage.getItem(`keshbak_name_${d}`)  || null,
+      first: localStorage.getItem(`keshbak_fname_${d}`) || null,
+      last:  localStorage.getItem(`keshbak_lname_${d}`) || null,
+    };
+  } catch { return { name: null, first: null, last: null }; }
 };
 
-const saveStoredCardNumber = (phone, cardNumber) => {
-  if (!phone || !cardNumber || cardNumber === '—') return;
-  const digits = phone.replace(/\D/g, '');
-  if (!digits) return;
+const saveStoredName = (phone, name, first, last) => {
+  const d = getDigits(phone);
+  if (!d) return;
   try {
-    localStorage.setItem(`keshbak_card_${digits}`, cardNumber);
-    localStorage.setItem(`keshbak_card_number_${digits}`, cardNumber);
-  } catch (e) {}
+    if (name && name !== 'Mijoz') localStorage.setItem(`keshbak_name_${d}`, name);
+    if (first) localStorage.setItem(`keshbak_fname_${d}`, first);
+    if (last)  localStorage.setItem(`keshbak_lname_${d}`, last);
+  } catch {}
 };
 
-const getOrGenerateCardNumber = (dbCard, cachedCard, phone) => {
-  if (dbCard && dbCard !== '—' && dbCard.trim()) {
-    saveStoredCardNumber(phone, dbCard.trim());
-    return dbCard.trim();
-  }
-  if (cachedCard && cachedCard !== '—' && cachedCard.trim()) {
-    saveStoredCardNumber(phone, cachedCard.trim());
-    return cachedCard.trim();
-  }
-  const stored = getStoredCardNumber(phone);
-  if (stored && stored !== '—' && stored.trim()) {
-    return stored.trim();
-  }
+// Profil keshini saqlash va o'qish
+const getCachedProfile = (userId, phone) => {
+  try {
+    const byId    = userId ? localStorage.getItem(`keshbak_profile_${userId}`) : null;
+    const byPhone = phone  ? localStorage.getItem(`keshbak_profile_${getDigits(phone)}`) : null;
+    const raw = byId || byPhone || localStorage.getItem('keshbak_profile_global');
+    return raw ? JSON.parse(raw) : null;
+  } catch { return null; }
+};
 
-  const newCard = 'KB-' + new Date().getFullYear() + '-' + Math.floor(Math.random() * 9000 + 1000);
-  saveStoredCardNumber(phone, newCard);
+const saveCachedProfile = (userId, phone, data) => {
+  if (!data) return;
+  try {
+    const str = JSON.stringify(data);
+    if (userId) localStorage.setItem(`keshbak_profile_${userId}`, str);
+    if (phone)  localStorage.setItem(`keshbak_profile_${getDigits(phone)}`, str);
+    localStorage.setItem('keshbak_profile_global', str);
+  } catch {}
+};
+
+// Karta raqamni hal qilish: DB → kesh → localStorage → yangi
+const resolveCard = (dbCard, cachedCard, phone) => {
+  const c1 = (dbCard     || '').trim();
+  const c2 = (cachedCard || '').trim();
+  const c3 = getStoredCard(phone) || '';
+  const existing = c1 || c2 || c3;
+  if (existing && existing !== '—') {
+    saveStoredCard(phone, existing);
+    return existing;
+  }
+  const newCard = `KB-${new Date().getFullYear()}-${Math.floor(Math.random() * 9000 + 1000)}`;
+  saveStoredCard(phone, newCard);
   return newCard;
 };
 
-// Supabase bazasiga ism, familiya va barcha ma'lumotlarni ishonchli saqlash (ID hamda telefon variantlari bo'yicha)
-const syncProfileToSupabase = async (profileData) => {
-  if (!profileData) return;
-
-  const { id, name, full_name, first_name, last_name, phone, card_number, cashback_balance, level } = profileData;
-  const fullName = name || full_name || [first_name, last_name].filter(Boolean).join(' ').trim();
-  
-  const phoneDigits = phone ? phone.replace(/\D/g, '') : '';
-  const validCardNumber = card_number || getStoredCardNumber(phone) || ('KB-' + new Date().getFullYear() + '-' + Math.floor(Math.random() * 9000 + 1000));
-  saveStoredCardNumber(phone, validCardNumber);
-
-  if (!fullName || fullName === 'Mijoz') return;
-
-  let cleanFirst = first_name || '';
-  let cleanLast = last_name || '';
-  if (!cleanFirst && !cleanLast && fullName) {
-    const parts = fullName.trim().split(' ');
-    cleanFirst = parts[0] || '';
-    cleanLast = parts.slice(1).join(' ') || '';
-  }
-
-  const updatePayloadWithFirstLast = {
-    name: fullName,
-    full_name: fullName,
-    card_number: validCardNumber,
-  };
-  if (cleanFirst) updatePayloadWithFirstLast.first_name = cleanFirst;
-  if (cleanLast) updatePayloadWithFirstLast.last_name = cleanLast;
-
-  const updatePayloadMin = {
-    name: fullName,
-    full_name: fullName,
-    card_number: validCardNumber,
-  };
-
-  const phoneVariations = [
-    phone,
-    phoneDigits ? '+' + phoneDigits : null,
-    phoneDigits,
-  ].filter(Boolean);
-
-  // 1. Update by ID
-  if (id) {
-    let { error } = await supabase.from('profiles').update(updatePayloadWithFirstLast).eq('id', id);
-    if (error) {
-      await supabase.from('profiles').update(updatePayloadMin).eq('id', id);
-    }
-  }
-
-  // 2. Update by Phone variations
-  for (const p of phoneVariations) {
-    let { error } = await supabase.from('profiles').update(updatePayloadWithFirstLast).eq('phone', p);
-    if (error) {
-      await supabase.from('profiles').update(updatePayloadMin).eq('phone', p);
-    }
-  }
-
-  // 3. Upsert if row doesn't exist
-  if (id) {
-    const upsertPayload = {
-      id,
-      name: fullName,
-      full_name: fullName,
-      phone: phone || '',
-      card_number: validCardNumber,
-      cashback_balance: cashback_balance ?? 0,
-      level: level || 'Standart',
-    };
-    if (cleanFirst) upsertPayload.first_name = cleanFirst;
-    if (cleanLast) upsertPayload.last_name = cleanLast;
-
-    let { error: upsertErr } = await supabase.from('profiles').upsert(upsertPayload, { onConflict: 'id' });
-    if (upsertErr) {
-      delete upsertPayload.first_name;
-      delete upsertPayload.last_name;
-      await supabase.from('profiles').upsert(upsertPayload, { onConflict: 'id' });
-    }
-  }
+// Supabase dan profilni so'rash – * select, xatolar yutib yuboriladi
+const fetchProfileFromDB = async (field, value) => {
+  if (!value) return null;
+  try {
+    const { data, error } = await supabase
+      .from('profiles')
+      .select('*')
+      .eq(field, value)
+      .maybeSingle();
+    if (error) return null;   // jadval yoki ustun yo'q bo'lsa – jim yutib yuborish
+    return data || null;
+  } catch { return null; }
 };
+
+// Supabase ga faqat xavfsiz ustunlar bilan yozish (xatolar yutib yuboriladi)
+const safePatch = async (filter, value, payload) => {
+  try {
+    await supabase.from('profiles').update(payload).eq(filter, value);
+  } catch {}
+};
+
+const safeUpsert = async (payload) => {
+  try {
+    await supabase.from('profiles').upsert(payload, { onConflict: 'id' });
+  } catch {}
+};
+
+// ─── PROVIDER ───────────────────────────────────────────────────────────────
 
 export const AuthProvider = ({ children }) => {
   const [user,    setUser]    = useState(null);
   const [profile, setProfile] = useState(null);
   const [loading, setLoading] = useState(true);
 
-  // Profil ma'lumotlarini yuklash
+  // ── Profil yuklash ─────────────────────────────────────────────────────
   const loadProfile = async (userId, userObj = null) => {
     if (!userId) return;
 
@@ -166,345 +121,256 @@ export const AuthProvider = ({ children }) => {
     if (u?.phone) {
       cleanPhone = u.phone;
     } else if (u?.email) {
-      const emailParts = u.email.split('@')[0];
-      const phoneDigits = emailParts.split('_')[0].replace(/\D/g, '');
-      if (phoneDigits) {
-        cleanPhone = '+' + phoneDigits;
-      }
+      const digits = u.email.split('@')[0].split('_')[0].replace(/\D/g, '');
+      if (digits) cleanPhone = '+' + digits;
     }
 
-    const cached = GET_CACHED_PROFILE(userId, cleanPhone);
+    const cached = getCachedProfile(userId, cleanPhone);
+    const stored = getStoredName(cleanPhone);
 
-    // 1. ID bo'yicha profilni yuklash
-    let { data, error: selectErr } = await supabase
-      .from('profiles')
-      .select('*')
-      .eq('id', userId)
-      .maybeSingle();
+    // DB dan profil yuklash (xatolar yutib yuboriladi)
+    let data = await fetchProfileFromDB('id', userId);
 
-    if (selectErr) {
-      console.error("loadProfile select error:", selectErr);
-    }
-
-    // 2. Agar ID bo'yicha topilmasa, telefon bo'yicha izlash
+    // ID bo'yicha topilmasa – telefon bo'yicha
     if (!data && cleanPhone) {
-      const { data: phoneProfile } = await supabase
-        .from('profiles')
-        .select('*')
-        .eq('phone', cleanPhone)
-        .maybeSingle();
-
-      if (phoneProfile) {
-        data = phoneProfile;
-        try {
-          await supabase.from('profiles').update({ id: userId }).eq('phone', cleanPhone);
-        } catch (e) {}
-      }
+      const d = getDigits(cleanPhone);
+      data = await fetchProfileFromDB('phone', '+' + d)
+          || await fetchProfileFromDB('phone', d);
     }
 
-    // 3. Profil ma'lumotlarini birlashtirish
-    const validName = (nameVal) => nameVal && nameVal !== 'Mijoz' && nameVal !== "Noma'lum Mijoz" ? nameVal : null;
+    const validName = (v) => v && v !== 'Mijoz' && v.trim() ? v.trim() : null;
+    const finalName  = validName(data?.name)
+                    || validName(cached?.name)
+                    || validName(stored.name)
+                    || 'Mijoz';
 
-    // Telefon raqamiga biriktirilgan saqlangan ism (chiqib qayta kirganida ishlatilinadi)
-    const phoneDigitsForName = cleanPhone ? cleanPhone.replace(/\D/g, '') : '';
-    const storedName = phoneDigitsForName ? localStorage.getItem(`keshbak_name_${phoneDigitsForName}`) : null;
-    const storedFirst = phoneDigitsForName ? localStorage.getItem(`keshbak_fname_${phoneDigitsForName}`) : null;
-    const storedLast = phoneDigitsForName ? localStorage.getItem(`keshbak_lname_${phoneDigitsForName}`) : null;
-    
-    const dbName = data?.name || data?.full_name;
-    const finalName = validName(dbName) || validName(cached?.name) || validName(cached?.full_name) || validName(storedName) || 'Mijoz';
-    const cardNumber = getOrGenerateCardNumber(data?.card_number, cached?.card_number, cleanPhone || data?.phone || cached?.phone);
+    const parts      = finalName !== 'Mijoz' ? finalName.split(' ') : [];
+    const finalFirst = cached?.first_name || stored.first || parts[0] || '';
+    const finalLast  = cached?.last_name  || stored.last  || parts.slice(1).join(' ') || '';
 
-    let mergedProfile = {
-      id: userId,
-      name: finalName,
-      full_name: finalName,
-      phone: data?.phone || cleanPhone || cached?.phone || '',
-      card_number: cardNumber,
+    const cardNumber = resolveCard(data?.card_number, cached?.card_number, cleanPhone || data?.phone);
+
+    const mergedProfile = {
+      id:               userId,
+      name:             finalName,
+      first_name:       finalFirst,
+      last_name:        finalLast,
+      phone:            data?.phone || cleanPhone || cached?.phone || '',
+      card_number:      cardNumber,
       cashback_balance: data?.cashback_balance ?? cached?.cashback_balance ?? 0,
-      level: data?.level || cached?.level || 'Standart',
-      first_name: data?.first_name || cached?.first_name || storedFirst || '',
-      last_name: data?.last_name || cached?.last_name || storedLast || '',
+      level:            data?.level || cached?.level || 'Standart',
     };
 
+    // localStorage ga darhol saqlash
+    saveCachedProfile(userId, cleanPhone, mergedProfile);
+    if (cleanPhone) saveStoredName(cleanPhone, finalName, finalFirst, finalLast);
+
+    // DB ni kerak bo'lsa tuzatish (xatolar yutiladi)
     if (data) {
-      // Agarda DB dagi yozuvda ism 'Mijoz' bo'lib, keshda haqiqiy ism bo'lsa DB ni yangilaymiz
-      if ((data.name === 'Mijoz' || !data.name) && cached?.name && cached.name !== 'Mijoz') {
-        mergedProfile.name = cached.name;
-        mergedProfile.full_name = cached.name;
-        try {
-          await supabase.from('profiles').update({ name: cached.name, full_name: cached.name }).eq('id', userId);
-        } catch (e) {}
+      if (!data.card_number && cardNumber) {
+        safePatch('id', userId, { card_number: cardNumber });
       }
-      // Agarda DB dagi yozuvda karta bo'sh bo'lsa DB ni yangilaymiz
-      if (!data.card_number) {
-        try {
-          await supabase.from('profiles').update({ card_number: cardNumber }).eq('id', userId);
-        } catch (e) {}
+      if (!validName(data.name) && validName(finalName)) {
+        safePatch('id', userId, { name: finalName });
       }
     } else {
-      // 4. DB da profil topilmasa, upsert qilamiz
-      const { data: createdProfile, error: upsertErr } = await supabase
-        .from('profiles')
-        .upsert(mergedProfile, { onConflict: 'id' })
-        .select('*')
-        .maybeSingle();
-
-      if (createdProfile) {
-        mergedProfile = { ...mergedProfile, ...createdProfile };
-      } else {
-        console.error("loadProfile upsert xatosi:", upsertErr);
-      }
+      // Profil DB da yo'q bo'lsa – xavfsiz yaratish
+      safeUpsert({
+        id:               userId,
+        name:             finalName !== 'Mijoz' ? finalName : 'Mijoz',
+        phone:            cleanPhone || '',
+        card_number:      cardNumber,
+        cashback_balance: 0,
+        level:            'Standart',
+      });
     }
 
-    if (mergedProfile.name && mergedProfile.name !== 'Mijoz') {
-      try {
-        await syncProfileToSupabase(mergedProfile);
-      } catch (e) {}
-    }
-
-    SAVE_CACHED_PROFILE(userId, cleanPhone, mergedProfile);
     setProfile(mergedProfile);
   };
 
+  // ── Auth o'zgarishlarini tinglash ──────────────────────────────────────
   useEffect(() => {
     let profileChannel = null;
-    let currentSubscribedUserId = null;
+    let subscribedId = null;
 
-    const setupProfileSubscription = (userId) => {
-      if (!userId) return;
-      if (currentSubscribedUserId === userId && profileChannel) return;
+    const setupSub = (userId) => {
+      if (!userId || subscribedId === userId) return;
+      if (profileChannel) { try { supabase.removeChannel(profileChannel); } catch {} }
+      subscribedId = userId;
 
-      if (profileChannel) {
-        try {
-          supabase.removeChannel(profileChannel);
-        } catch (e) {}
-        profileChannel = null;
-      }
-
-      currentSubscribedUserId = userId;
-      const channel = supabase.channel(`profile_changes_${userId}`);
-      channel.on(
-        'postgres_changes',
-        {
-          event: '*',
-          schema: 'public',
-          table: 'profiles',
-          filter: `id=eq.${userId}`,
-        },
-        (payload) => {
-          if (payload.new) {
-            setProfile(prev => {
-              const updated = { ...(prev || {}), ...payload.new };
-              if (!updated.name || updated.name === 'Mijoz') {
-                const cached = GET_CACHED_PROFILE(userId);
-                if (cached?.name && cached.name !== 'Mijoz') {
-                  updated.name = cached.name;
-                  updated.full_name = cached.name;
-                }
-              }
-              if (!updated.card_number && prev?.card_number) {
-                updated.card_number = prev.card_number;
-              }
-              SAVE_CACHED_PROFILE(userId, updated.phone, updated);
-              return updated;
-            });
-          }
+      const ch = supabase.channel(`profile_${userId}`);
+      ch.on('postgres_changes', {
+        event: '*', schema: 'public', table: 'profiles', filter: `id=eq.${userId}`,
+      }, (payload) => {
+        if (payload.new) {
+          setProfile(prev => {
+            const updated = { ...(prev || {}), ...payload.new };
+            if (!updated.card_number && prev?.card_number) updated.card_number = prev.card_number;
+            if ((!updated.name || updated.name === 'Mijoz') && prev?.name && prev.name !== 'Mijoz') {
+              updated.name = prev.name;
+            }
+            saveCachedProfile(userId, updated.phone, updated);
+            return updated;
+          });
         }
-      );
-
-      channel.subscribe();
-      profileChannel = channel;
+      }).subscribe();
+      profileChannel = ch;
     };
 
-    // Auth o'zgarishlarini va sessiyani bir joyda tinglash
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      async (_event, session) => {
-        const u = session?.user ?? null;
-        setUser(u);
-        if (u) {
-          await loadProfile(u.id, u);
-          setupProfileSubscription(u.id);
-        } else {
-          setProfile(null);
-          currentSubscribedUserId = null;
-          if (profileChannel) {
-            try {
-              supabase.removeChannel(profileChannel);
-            } catch (e) {}
-            profileChannel = null;
-          }
-        }
-        setLoading(false);
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (_event, session) => {
+      const u = session?.user ?? null;
+      setUser(u);
+      if (u) {
+        await loadProfile(u.id, u);
+        setupSub(u.id);
+      } else {
+        setProfile(null);
+        subscribedId = null;
+        if (profileChannel) { try { supabase.removeChannel(profileChannel); } catch {} profileChannel = null; }
       }
-    );
+      setLoading(false);
+    });
 
     return () => {
       subscription.unsubscribe();
-      if (profileChannel) {
-        try {
-          supabase.removeChannel(profileChannel);
-        } catch (e) {}
-      }
+      if (profileChannel) { try { supabase.removeChannel(profileChannel); } catch {} }
     };
   }, []);
 
-  // OTP tasdiqlash va tizimga kirish (yoki ro'yxatdan o'tish)
+  // ── OTP tasdiqlash va tizimga kirish ───────────────────────────────────
   const verifyOTPAndLogin = async (phone, code, nameInput = '', lastNameInput = '') => {
     const cleanPhone = phone.trim();
-    const cleanCode = code.trim();
+    const cleanCode  = code.trim();
 
-    // 1. otp_codes jadvalidan kodni olish va tekshirish
-    const { data: otpData, error: otpError } = await supabase
-      .from('otp_codes')
-      .select('*')
-      .eq('phone', cleanPhone)
-      .maybeSingle();
+    // OTP kodni tekshirish
+    let otpData = null;
+    try {
+      const res = await supabase
+        .from('otp_codes')
+        .select('*')
+        .eq('phone', cleanPhone)
+        .maybeSingle();
+      otpData = res.data;
+    } catch {}
 
-    if (otpError) {
-      return { error: 'Ulanish xatosi: ' + otpError.message };
-    }
+    if (!otpData) return { error: 'Keshbek uchun kod yuborilmagan yoki topilmadi.' };
+    if (new Date(otpData.expires_at) < new Date()) return { error: 'Tasdiqlash kodining vaqti o\'tgan. Qayta kod yuboring.' };
+    if (otpData.code !== cleanCode) return { error: 'Kiritilgan tasdiqlash kodi noto\'g\'ri!' };
 
-    if (!otpData) {
-      return { error: 'Keshbek uchun kod yuborilmagan yoki topilmadi.' };
-    }
+    try { await supabase.from('otp_codes').delete().eq('phone', cleanPhone); } catch {}
 
-    // Kod muddati o'tganligini tekshirish
-    if (new Date(otpData.expires_at) < new Date()) {
-      return { error: 'Tasdiqlash kodining vaqti o\'tgan. Qayta kod yuboring.' };
-    }
-
-    // Kodni tekshirish
-    if (otpData.code !== cleanCode) {
-      return { error: 'Kiritilgan tasdiqlash kodi noto\'g\'ri!' };
-    }
-
-    // Ishlatilgan kodni o'chirib tashlaymiz
-    await supabase.from('otp_codes').delete().eq('phone', cleanPhone);
-
-    // 2. Supabase auth tizimi uchun telefon raqam va parol
-    const phoneDigits = cleanPhone.replace('+', '');
-    const password = `OtpSecretPasswordFor_${phoneDigits}`;
-
-    let finalFirstName = '';
-    let finalLastName = '';
-    let finalName = '';
-
+    // Ism va familiyani ajratish
+    let firstName = '', lastName = '';
     if (typeof nameInput === 'object' && nameInput !== null) {
-      finalFirstName = (nameInput.firstName || nameInput.first_name || '').trim();
-      finalLastName = (nameInput.lastName || nameInput.last_name || '').trim();
+      firstName = (nameInput.firstName || nameInput.first_name || '').trim();
+      lastName  = (nameInput.lastName  || nameInput.last_name  || '').trim();
     } else if (typeof nameInput === 'string' && lastNameInput) {
-      finalFirstName = nameInput.trim();
-      finalLastName = lastNameInput.trim();
+      firstName = nameInput.trim();
+      lastName  = lastNameInput.trim();
     } else if (typeof nameInput === 'string' && nameInput.trim()) {
       const parts = nameInput.trim().split(' ');
-      finalFirstName = parts[0] || '';
-      finalLastName = parts.slice(1).join(' ') || '';
+      firstName = parts[0] || '';
+      lastName  = parts.slice(1).join(' ') || '';
     }
-    finalName = [finalFirstName, finalLastName].filter(Boolean).join(' ').trim();
+    const fullName = [firstName, lastName].filter(Boolean).join(' ').trim();
 
-    // 3. Tizimga kirishga urinish (Supabase Auth)
+    // Supabase Auth orqali kirish yoki ro'yxatdan o'tish
+    const digits   = cleanPhone.replace('+', '');
+    const email    = `${digits}@keshbak.uz`;
+    const password = `OtpSecretPasswordFor_${digits}`;
+
     let userId = null;
-    const email = `${phoneDigits}@keshbak.uz`;
-
-    // 1-qadam: Kirish (Sign In)
-    let { data: signInData, error: signInError } = await supabase.auth.signInWithPassword({
-      email,
-      password,
-    });
-
-    if (!signInError && signInData?.user) {
-      userId = signInData.user.id;
-    } else {
-      // 2-qadam: Ro'yxatdan o'tish (Sign Up)
-      let { data: signUpData, error: signUpError } = await supabase.auth.signUp({
-        email,
-        password,
-      });
-
-      if (signUpData?.user) {
-        userId = signUpData.user.id;
-        if (!signUpData.session) {
-          const reSignIn = await supabase.auth.signInWithPassword({ email, password });
-          if (reSignIn.data?.user) userId = reSignIn.data.user.id;
-        }
-      } else if (signUpError) {
-        // Agar ushbu email allaqachon ro'yxatdan o'tgan bo'lsa
-        if (signUpError.message.includes('already registered') || signUpError.message.includes('already exists')) {
-          const altEmail = `${phoneDigits}_v2@keshbak.uz`;
-          const altSignUp = await supabase.auth.signUp({ email: altEmail, password });
-          if (altSignUp.data?.user) {
-            userId = altSignUp.data.user.id;
-            if (!altSignUp.session) {
-              const reSignIn = await supabase.auth.signInWithPassword({ email: altEmail, password });
-              if (reSignIn.data?.user) userId = reSignIn.data.user.id;
+    try {
+      const signIn = await supabase.auth.signInWithPassword({ email, password });
+      if (!signIn.error && signIn.data?.user) {
+        userId = signIn.data.user.id;
+      } else {
+        const signUp = await supabase.auth.signUp({ email, password });
+        if (signUp.data?.user) {
+          userId = signUp.data.user.id;
+          if (!signUp.data.session) {
+            const reIn = await supabase.auth.signInWithPassword({ email, password });
+            if (reIn.data?.user) userId = reIn.data.user.id;
+          }
+        } else if (signUp.error?.message?.includes('already registered') || signUp.error?.message?.includes('already exists')) {
+          const altEmail = `${digits}_v2@keshbak.uz`;
+          const altUp = await supabase.auth.signUp({ email: altEmail, password });
+          if (altUp.data?.user) {
+            userId = altUp.data.user.id;
+            if (!altUp.data.session) {
+              const reIn = await supabase.auth.signInWithPassword({ email: altEmail, password });
+              if (reIn.data?.user) userId = reIn.data.user.id;
             }
           } else {
-            const altSignIn = await supabase.auth.signInWithPassword({ email: altEmail, password });
-            if (altSignIn.data?.user) {
-              userId = altSignIn.data.user.id;
-            } else {
-              return { error: 'Tizimga kirishda xatolik yuz berdi. Qayta urinib ko\'ring.' };
-            }
+            const altIn = await supabase.auth.signInWithPassword({ email: altEmail, password });
+            if (altIn.data?.user) userId = altIn.data.user.id;
+            else return { error: 'Tizimga kirishda xatolik yuz berdi. Qayta urinib ko\'ring.' };
           }
         } else {
-          return { error: signUpError.message };
+          return { error: signUp.error?.message || 'Tizimga kirishda xatolik.' };
         }
       }
+    } catch (e) {
+      return { error: 'Internet ulanish xatosi. Qayta urinib ko\'ring.' };
     }
 
-    if (!userId) {
-      return { error: 'Tizimga kirishda kutilmagan xatolik yuz berdi.' };
-    }
+    if (!userId) return { error: 'Tizimga kirishda kutilmagan xatolik yuz berdi.' };
 
-    // 4. Profil mavjudligini tekshirish va yaratish / yangilash (upsert)
-    const { data: profileExists } = await supabase
-      .from('profiles')
-      .select('*')
-      .eq('phone', cleanPhone)
-      .maybeSingle();
+    const cached  = getCachedProfile(userId, cleanPhone);
+    const stored  = getStoredName(cleanPhone);
+    const existingProfile = await fetchProfileFromDB('phone', cleanPhone)
+                         || await fetchProfileFromDB('phone', digits);
 
-    const cached = GET_CACHED_PROFILE(userId, cleanPhone);
-    const cardNumber = getOrGenerateCardNumber(profileExists?.card_number, cached?.card_number, cleanPhone);
-    const resolvedName = finalName || profileExists?.name || profileExists?.full_name || cached?.name || 'Mijoz';
-    const resolvedFirstName = finalFirstName || profileExists?.first_name || cached?.first_name || '';
-    const resolvedLastName = finalLastName || profileExists?.last_name || cached?.last_name || '';
+    const validName = (v) => v && v !== 'Mijoz' && v.trim() ? v.trim() : null;
+    const resolvedName  = validName(fullName)
+                       || validName(existingProfile?.name)
+                       || validName(cached?.name)
+                       || validName(stored.name)
+                       || 'Mijoz';
+    const resolvedFirst = firstName || cached?.first_name || stored.first || '';
+    const resolvedLast  = lastName  || cached?.last_name  || stored.last  || '';
+    const cardNumber    = resolveCard(existingProfile?.card_number, cached?.card_number, cleanPhone);
 
-    const payload = {
+    if (resolvedName !== 'Mijoz') saveStoredName(cleanPhone, resolvedName, resolvedFirst, resolvedLast);
+
+    const newProfile = {
       id:               userId,
       name:             resolvedName,
-      full_name:        resolvedName,
+      first_name:       resolvedFirst,
+      last_name:        resolvedLast,
       phone:            cleanPhone,
       card_number:      cardNumber,
-      cashback_balance: profileExists?.cashback_balance ?? cached?.cashback_balance ?? 0,
-      level:            profileExists?.level || cached?.level || 'Standart',
+      cashback_balance: existingProfile?.cashback_balance ?? cached?.cashback_balance ?? 0,
+      level:            existingProfile?.level || cached?.level || 'Standart',
     };
-    if (resolvedFirstName) payload.first_name = resolvedFirstName;
-    if (resolvedLastName) payload.last_name = resolvedLastName;
 
-    SAVE_CACHED_PROFILE(userId, cleanPhone, payload);
-    await syncProfileToSupabase(payload);
+    saveCachedProfile(userId, cleanPhone, newProfile);
+
+    // Supabase ga xavfsiz yozish (xatolar yutiladi)
+    if (resolvedName !== 'Mijoz') {
+      safePatch('id', userId, { name: resolvedName, card_number: cardNumber });
+      safePatch('phone', cleanPhone, { name: resolvedName, card_number: cardNumber });
+    }
+
     await loadProfile(userId, { email, phone: cleanPhone });
     return { success: true };
   };
 
-  // Profil ismini yangilash (Ism va Familiyani alohida qabul qiladi)
+  // ── Profil ismini yangilash ────────────────────────────────────────────
   const updateProfileName = async (firstNameVal, lastNameVal = '') => {
     if (!user && !profile) return { error: 'Tizimga kirmagansiz' };
 
-    let cleanFirst = '';
-    let cleanLast = '';
-
+    let cleanFirst = '', cleanLast = '';
     if (typeof firstNameVal === 'object' && firstNameVal !== null) {
       cleanFirst = (firstNameVal.firstName || firstNameVal.first_name || '').trim();
-      cleanLast = (firstNameVal.lastName || firstNameVal.last_name || '').trim();
+      cleanLast  = (firstNameVal.lastName  || firstNameVal.last_name  || '').trim();
     } else if (typeof firstNameVal === 'string' && lastNameVal) {
       cleanFirst = firstNameVal.trim();
-      cleanLast = lastNameVal.trim();
+      cleanLast  = lastNameVal.trim();
     } else if (typeof firstNameVal === 'string') {
       const parts = firstNameVal.trim().split(' ');
       cleanFirst = parts[0] || '';
-      cleanLast = parts.slice(1).join(' ') || '';
+      cleanLast  = parts.slice(1).join(' ') || '';
     }
 
     const fullName = [cleanFirst, cleanLast].filter(Boolean).join(' ').trim();
@@ -513,44 +379,50 @@ export const AuthProvider = ({ children }) => {
     const targetId = profile?.id || user?.id;
     let cleanPhone = profile?.phone || user?.phone || '';
     if (!cleanPhone && user?.email) {
-      const emailParts = user.email.split('@')[0];
-      const phoneDigits = emailParts.split('_')[0].replace(/\D/g, '');
-      if (phoneDigits) cleanPhone = '+' + phoneDigits;
+      const d = user.email.split('@')[0].split('_')[0].replace(/\D/g, '');
+      if (d) cleanPhone = '+' + d;
     }
 
-    const cached = GET_CACHED_PROFILE(targetId, cleanPhone);
-    const cardNumber = getOrGenerateCardNumber(profile?.card_number, cached?.card_number, cleanPhone || profile?.phone);
+    const cached     = getCachedProfile(targetId, cleanPhone);
+    const cardNumber = resolveCard(profile?.card_number, cached?.card_number, cleanPhone);
 
     const updatedProfile = {
       ...(profile || {}),
-      id: targetId,
-      name: fullName,
-      full_name: fullName,
-      first_name: cleanFirst || null,
-      last_name: cleanLast || null,
-      card_number: cardNumber,
-      phone: profile?.phone || cleanPhone || '',
+      id:               targetId,
+      name:             fullName,
+      first_name:       cleanFirst || '',
+      last_name:        cleanLast  || '',
+      card_number:      cardNumber,
+      phone:            cleanPhone || profile?.phone || '',
       cashback_balance: profile?.cashback_balance ?? 0,
-      level: profile?.level || 'Standart',
+      level:            profile?.level || 'Standart',
     };
 
-    // 1. Local profildagi ism va karta raqamni darhol yangilaymiz hamda keshlaymiz
+    // 1. UI ni darhol yangilash
     setProfile(updatedProfile);
-    SAVE_CACHED_PROFILE(targetId, cleanPhone, updatedProfile);
 
-    // 2. Supabase bazasiga ko'p bosqichli ishonchli sinxronlashtiramiz
-    await syncProfileToSupabase(updatedProfile);
+    // 2. localStorage ga saqlash
+    saveCachedProfile(targetId, cleanPhone, updatedProfile);
+    saveStoredName(cleanPhone, fullName, cleanFirst, cleanLast);
+
+    // 3. Supabase ga xavfsiz yozish (xatolar yutiladi)
+    safePatch('id', targetId, { name: fullName, card_number: cardNumber });
+    if (cleanPhone) {
+      const d = getDigits(cleanPhone);
+      safePatch('phone', '+' + d, { name: fullName, card_number: cardNumber });
+      safePatch('phone', d,       { name: fullName, card_number: cardNumber });
+    }
 
     return { success: true };
   };
 
-  // Chiqish – profil keshini SAQLAYMIZ (faqat auth sessionni o'chiramiz)
-  // Sabab: qayta kirganida ism so'ralmasin
+  // ── Chiqish – keshni SAQLAYMIZ, faqat auth sessionni tugatamiz ─────────
   const signOut = async () => {
-    await supabase.auth.signOut();
+    try { await supabase.auth.signOut(); } catch {}
+    // localStorage profil keshi O'CHIRILMAYDI – qayta kirganida ism so'ralmasin
   };
 
-  // Balansni yangilash
+  // ── Balansni yangilash ─────────────────────────────────────────────────
   const refreshProfile = async () => {
     if (user) await loadProfile(user.id);
   };
@@ -563,4 +435,3 @@ export const AuthProvider = ({ children }) => {
 };
 
 export const useAuth = () => useContext(AuthContext);
-

@@ -90,7 +90,7 @@ const triggerVibration = () => {
 };
 
 export const NotificationProvider = ({ children }) => {
-  const { user } = useAuth();
+  const { user, profile } = useAuth();
   const [notifications, setNotifications] = useState([]);
   const [loading, setLoading] = useState(false);
   const [latestToast, setLatestToast] = useState(null);
@@ -121,6 +121,17 @@ export const NotificationProvider = ({ children }) => {
         .eq('user_id', user.id)
         .or('amount.gt.0,cashback_amount.neq.0')
         .order('created_at', { ascending: false });
+
+      // 3. Fetch from 'xabarlar' table (chat_id orqali)
+      let xabarlarData = [];
+      if (profile?.chat_id) {
+        const { data: xbData } = await supabase
+          .from('xabarlar')
+          .select('*')
+          .eq('chat_id', String(profile.chat_id))
+          .order('created_at', { ascending: false });
+        if (xbData) xabarlarData = xbData;
+      }
 
       const readMap = getReadNotificationMap();
       const now = Date.now();
@@ -182,6 +193,30 @@ export const NotificationProvider = ({ children }) => {
         });
       });
 
+      // Process xabarlar table items
+      xabarlarData.forEach((xb) => {
+        const xbId = `xb_${xb.id}`;
+        const readTimestamp = readMap[xbId];
+        const isRead = !!readTimestamp || !!xb.is_read;
+
+        if (isRead && readTimestamp) {
+          if (now - readTimestamp > THREE_DAYS_MS) return;
+        }
+
+        items.push({
+          id: xbId,
+          orig_id: xb.id, // xabarlar jadvalidagi original id
+          is_xabar: true,
+          title: xb.title || "Xabar",
+          message: xb.message || "",
+          category: xb.category || "GENERAL",
+          amount: xb.amount || 0,
+          is_read: isRead,
+          read_at: readTimestamp || null,
+          created_at: xb.created_at
+        });
+      });
+
       // Sort combined list descending by created_at
       items.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
 
@@ -203,7 +238,7 @@ export const NotificationProvider = ({ children }) => {
     } finally {
       setLoading(false);
     }
-  }, [user?.id]);
+  }, [user?.id, profile?.chat_id]);
 
   // Bitta bildirishnomani o'qilgan deb belgilash
   const markAsRead = async (notificationId) => {
@@ -218,6 +253,14 @@ export const NotificationProvider = ({ children }) => {
     const readMap = getReadNotificationMap();
     readMap[notificationId] = now;
     saveReadNotificationMap(readMap);
+
+    // Agar bu 'xabarlar' jadvalidan bo'lsa, bazada ham is_read = true qilamiz
+    const notif = notifications.find(n => n.id === notificationId);
+    if (notif?.is_xabar && notif.orig_id) {
+      try {
+        await supabase.from('xabarlar').update({ is_read: true }).eq('id', notif.orig_id);
+      } catch {}
+    }
   };
 
   // Barcha bildirishnomalarni o'qilgan deb belgilash
@@ -226,10 +269,12 @@ export const NotificationProvider = ({ children }) => {
 
     const now = Date.now();
     const readMap = getReadNotificationMap();
+    let hasXabarlar = false;
 
     notifications.forEach((n) => {
       if (!n.is_read) {
         readMap[n.id] = now;
+        if (n.is_xabar) hasXabarlar = true;
       }
     });
 
@@ -238,6 +283,16 @@ export const NotificationProvider = ({ children }) => {
     setNotifications((prev) =>
       prev.map((n) => ({ ...n, is_read: true, read_at: n.read_at || now }))
     );
+
+    if (hasXabarlar && profile?.chat_id) {
+      try {
+        await supabase
+          .from('xabarlar')
+          .update({ is_read: true })
+          .eq('chat_id', String(profile.chat_id))
+          .eq('is_read', false);
+      } catch {}
+    }
   };
 
   // Real-time obuna (notifications va transactions jadvallariga)
@@ -325,6 +380,40 @@ export const NotificationProvider = ({ children }) => {
         }
       );
 
+      // 3. Realtime xabarlar table insert
+      if (profile?.chat_id) {
+        channel.on(
+          'postgres_changes',
+          {
+            event: 'INSERT',
+            schema: 'public',
+            table: 'xabarlar',
+            filter: `chat_id=eq.${profile.chat_id}`,
+          },
+          (payload) => {
+            const xb = payload.new;
+            playNotificationSound();
+            triggerVibration();
+
+            const newNotif = {
+              id: `xb_${xb.id}`,
+              orig_id: xb.id,
+              is_xabar: true,
+              title: xb.title || "Xabar",
+              message: xb.message || "",
+              category: xb.category || "GENERAL",
+              amount: xb.amount || 0,
+              is_read: false,
+              created_at: xb.created_at
+            };
+
+            setLatestToast(newNotif);
+            setTimeout(() => setLatestToast(null), 5000);
+            setNotifications((prev) => [newNotif, ...prev.filter((n) => n.id !== newNotif.id)]);
+          }
+        );
+      }
+
       channel.subscribe();
     } catch (e) {}
 
@@ -335,7 +424,7 @@ export const NotificationProvider = ({ children }) => {
         } catch (e) {}
       }
     };
-  }, [user?.id, fetchNotifications]);
+  }, [user?.id, profile?.chat_id, fetchNotifications]);
 
   return (
     <NotificationContext.Provider

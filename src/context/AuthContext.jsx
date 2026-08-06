@@ -3,106 +3,63 @@ import { supabase } from '../lib/supabase';
 
 const AuthContext = createContext(null);
 
-// ─── LOCAL STORAGE HELPERS ──────────────────────────────────────────────────
+// ─── SUPABASE SCHEMA (haqiqiy jadval ustunlari) ────────────────────────────
+//
+// profiles: id(uuid), name, first_name, last_name, phone,
+//           card_number, cashback_balance, level, created_at
+//
+// telegram_users: chat_id(TEXT PK), phone, cashback_balance,
+//                 full_name, card_number, created_at
+//
+// ──────────────────────────────────────────────────────────────────────────
 
 const getDigits = (phone) => (phone || '').replace(/\D/g, '');
 
-// Karta raqamini telefon raqamiga biriktirib saqlash
-const getStoredCard = (phone) => {
-  const d = getDigits(phone);
-  if (!d) return null;
-  try { return localStorage.getItem(`keshbak_card_${d}`) || null; } catch { return null; }
-};
+// Karta raqamini generatsiya qilish
+const generateCard = () =>
+  `KB-${new Date().getFullYear()}-${Math.floor(Math.random() * 9000 + 1000)}`;
 
-const saveStoredCard = (phone, card) => {
-  const d = getDigits(phone);
-  if (!d || !card || card === '—') return;
-  try { localStorage.setItem(`keshbak_card_${d}`, card); } catch {}
-};
-
-// Ism/familiyani telefon raqamiga biriktirib saqlash (FAQAT localStorage)
-const getStoredName = (phone) => {
-  const d = getDigits(phone);
-  if (!d) return { name: null, first: null, last: null };
-  try {
-    return {
-      name:  localStorage.getItem(`keshbak_name_${d}`)  || null,
-      first: localStorage.getItem(`keshbak_fname_${d}`) || null,
-      last:  localStorage.getItem(`keshbak_lname_${d}`) || null,
-    };
-  } catch { return { name: null, first: null, last: null }; }
-};
-
-const saveStoredName = (phone, name, first, last) => {
-  const d = getDigits(phone);
-  if (!d) return;
-  try {
-    if (name && name !== 'Mijoz') localStorage.setItem(`keshbak_name_${d}`, name);
-    if (first) localStorage.setItem(`keshbak_fname_${d}`, first);
-    if (last)  localStorage.setItem(`keshbak_lname_${d}`, last);
-  } catch {}
-};
-
-// Profil keshini saqlash va o'qish
-const getCachedProfile = (userId, phone) => {
-  try {
-    const byId    = userId ? localStorage.getItem(`keshbak_profile_${userId}`) : null;
-    const byPhone = phone  ? localStorage.getItem(`keshbak_profile_${getDigits(phone)}`) : null;
-    const raw = byId || byPhone || localStorage.getItem('keshbak_profile_global');
-    return raw ? JSON.parse(raw) : null;
-  } catch { return null; }
-};
-
-const saveCachedProfile = (userId, phone, data) => {
-  if (!data) return;
-  try {
-    const str = JSON.stringify(data);
-    if (userId) localStorage.setItem(`keshbak_profile_${userId}`, str);
-    if (phone)  localStorage.setItem(`keshbak_profile_${getDigits(phone)}`, str);
-    localStorage.setItem('keshbak_profile_global', str);
-  } catch {}
-};
-
-// Karta raqamni hal qilish: DB → kesh → localStorage → yangi
-const resolveCard = (dbCard, cachedCard, phone) => {
-  const c1 = (dbCard     || '').trim();
-  const c2 = (cachedCard || '').trim();
-  const c3 = getStoredCard(phone) || '';
-  const existing = c1 || c2 || c3;
-  if (existing && existing !== '—') {
-    saveStoredCard(phone, existing);
-    return existing;
-  }
-  const newCard = `KB-${new Date().getFullYear()}-${Math.floor(Math.random() * 9000 + 1000)}`;
-  saveStoredCard(phone, newCard);
-  return newCard;
-};
-
-// Supabase dan profilni so'rash – * select, xatolar yutib yuboriladi
-const fetchProfileFromDB = async (field, value) => {
+// Supabase dan profiles jadvalini yuklash
+const fetchProfile = async (field, value) => {
   if (!value) return null;
   try {
     const { data, error } = await supabase
       .from('profiles')
-      .select('*')
+      .select('id, name, first_name, last_name, phone, card_number, cashback_balance, level')
       .eq(field, value)
       .maybeSingle();
-    if (error) return null;   // jadval yoki ustun yo'q bo'lsa – jim yutib yuborish
+    if (error) return null;
     return data || null;
   } catch { return null; }
 };
 
-// Supabase ga faqat xavfsiz ustunlar bilan yozish (xatolar yutib yuboriladi)
-const safePatch = async (filter, value, payload) => {
-  try {
-    await supabase.from('profiles').update(payload).eq(filter, value);
-  } catch {}
+// telegram_users jadvalidan ma'lumot olish (phone bo'yicha)
+const fetchTelegramUser = async (phone) => {
+  if (!phone) return null;
+  const d = getDigits(phone);
+  for (const ph of ['+' + d, d]) {
+    try {
+      const { data, error } = await supabase
+        .from('telegram_users')
+        .select('chat_id, phone, cashback_balance, full_name, card_number')
+        .eq('phone', ph)
+        .maybeSingle();
+      if (!error && data) return data;
+    } catch {}
+  }
+  return null;
 };
 
-const safeUpsert = async (payload) => {
+// profiles jadvalini yangilash (xatolar yutiladi)
+const patchProfile = async (field, value, payload) => {
+  if (!value) return false;
   try {
-    await supabase.from('profiles').upsert(payload, { onConflict: 'id' });
-  } catch {}
+    const { error } = await supabase
+      .from('profiles')
+      .update(payload)
+      .eq(field, value);
+    return !error;
+  } catch { return false; }
 };
 
 // ─── PROVIDER ───────────────────────────────────────────────────────────────
@@ -125,96 +82,111 @@ export const AuthProvider = ({ children }) => {
       if (digits) cleanPhone = '+' + digits;
     }
 
-    const cached = getCachedProfile(userId, cleanPhone);
-    const stored = getStoredName(cleanPhone);
+    // 1. profiles jadvalidan ID bo'yicha yuklash
+    let dbProfile = await fetchProfile('id', userId);
 
-    // DB dan profil yuklash (xatolar yutib yuboriladi)
-    let data = await fetchProfileFromDB('id', userId);
-
-    // ID bo'yicha topilmasa – telefon bo'yicha
-    if (!data && cleanPhone) {
+    // 2. Topilmasa telefon bo'yicha
+    if (!dbProfile && cleanPhone) {
       const d = getDigits(cleanPhone);
-      data = await fetchProfileFromDB('phone', '+' + d)
-          || await fetchProfileFromDB('phone', d);
+      dbProfile = await fetchProfile('phone', '+' + d)
+               || await fetchProfile('phone', d);
     }
 
-    const validName = (v) => v && v !== 'Mijoz' && v.trim() ? v.trim() : null;
-    const finalName  = validName(data?.name)
-                    || validName(cached?.name)
-                    || validName(stored.name)
-                    || 'Mijoz';
+    // 3. telegram_users dan qo'shimcha ma'lumot (cashback_balance, card_number)
+    const tgUser = await fetchTelegramUser(cleanPhone || dbProfile?.phone);
 
-    const parts      = finalName !== 'Mijoz' ? finalName.split(' ') : [];
-    const finalFirst = cached?.first_name || stored.first || parts[0] || '';
-    const finalLast  = cached?.last_name  || stored.last  || parts.slice(1).join(' ') || '';
+    if (!dbProfile) {
+      // Profil topilmasa – minimal holat
+      setProfile({
+        id: userId,
+        phone: cleanPhone || '',
+        name: tgUser?.full_name || 'Mijoz',
+        first_name: '',
+        last_name: '',
+        card_number: tgUser?.card_number || '',
+        cashback_balance: tgUser?.cashback_balance ?? 0,
+        level: 'Standart',
+        chat_id: tgUser?.chat_id || null,
+      });
+      return;
+    }
 
-    const cardNumber = resolveCard(data?.card_number, cached?.card_number, cleanPhone || data?.phone);
+    // 4. Karta raqami yo'q bo'lsa generatsiya qilib DB ga yozish
+    let cardNumber = dbProfile.card_number || tgUser?.card_number || '';
+    if (!cardNumber) {
+      cardNumber = generateCard();
+      patchProfile('id', dbProfile.id || userId, { card_number: cardNumber });
+    }
+
+    // 5. Ism yo'q bo'lsa telegram_users dan olish
+    const finalName = dbProfile.name && dbProfile.name !== 'Mijoz'
+      ? dbProfile.name
+      : (tgUser?.full_name || 'Mijoz');
 
     const mergedProfile = {
-      id:               userId,
+      id:               dbProfile.id || userId,
       name:             finalName,
-      first_name:       finalFirst,
-      last_name:        finalLast,
-      phone:            data?.phone || cleanPhone || cached?.phone || '',
+      first_name:       dbProfile.first_name || '',
+      last_name:        dbProfile.last_name  || '',
+      phone:            dbProfile.phone || cleanPhone || '',
       card_number:      cardNumber,
-      cashback_balance: data?.cashback_balance ?? cached?.cashback_balance ?? 0,
-      level:            data?.level || cached?.level || 'Standart',
+      // cashback_balance: telegram_users dan olish (to'g'ri va yangi balans)
+      cashback_balance: tgUser?.cashback_balance ?? dbProfile.cashback_balance ?? 0,
+      level:            dbProfile.level || 'Standart',
+      chat_id:          tgUser?.chat_id || null,
     };
-
-    // localStorage ga darhol saqlash
-    saveCachedProfile(userId, cleanPhone, mergedProfile);
-    if (cleanPhone) saveStoredName(cleanPhone, finalName, finalFirst, finalLast);
-
-    // DB ni kerak bo'lsa tuzatish (xatolar yutiladi)
-    if (data) {
-      if (!data.card_number && cardNumber) {
-        safePatch('id', userId, { card_number: cardNumber });
-      }
-      if (!validName(data.name) && validName(finalName)) {
-        safePatch('id', userId, { name: finalName });
-      }
-    } else {
-      // Profil DB da yo'q bo'lsa – xavfsiz yaratish
-      safeUpsert({
-        id:               userId,
-        name:             finalName !== 'Mijoz' ? finalName : 'Mijoz',
-        phone:            cleanPhone || '',
-        card_number:      cardNumber,
-        cashback_balance: 0,
-        level:            'Standart',
-      });
-    }
 
     setProfile(mergedProfile);
   };
 
-  // ── Auth o'zgarishlarini tinglash ──────────────────────────────────────
+  // ── Real-time: profiles va telegram_users ni tinglash ─────────────────
   useEffect(() => {
-    let profileChannel = null;
-    let subscribedId = null;
+    let profileCh = null;
+    let tgCh      = null;
+    let subId     = null;
 
-    const setupSub = (userId) => {
-      if (!userId || subscribedId === userId) return;
-      if (profileChannel) { try { supabase.removeChannel(profileChannel); } catch {} }
-      subscribedId = userId;
+    const setupSub = (userId, phone) => {
+      if (subId === userId) return;
+      if (profileCh) { try { supabase.removeChannel(profileCh); } catch {} }
+      if (tgCh)      { try { supabase.removeChannel(tgCh);      } catch {} }
+      subId = userId;
 
-      const ch = supabase.channel(`profile_${userId}`);
-      ch.on('postgres_changes', {
-        event: '*', schema: 'public', table: 'profiles', filter: `id=eq.${userId}`,
-      }, (payload) => {
-        if (payload.new) {
-          setProfile(prev => {
-            const updated = { ...(prev || {}), ...payload.new };
-            if (!updated.card_number && prev?.card_number) updated.card_number = prev.card_number;
-            if ((!updated.name || updated.name === 'Mijoz') && prev?.name && prev.name !== 'Mijoz') {
-              updated.name = prev.name;
+      // profiles o'zgarishlarini tinglash
+      profileCh = supabase.channel(`profile_rt_${userId}`)
+        .on('postgres_changes', {
+          event: '*', schema: 'public', table: 'profiles', filter: `id=eq.${userId}`,
+        }, (payload) => {
+          if (payload.new) {
+            setProfile(prev => ({
+              ...(prev || {}),
+              ...payload.new,
+              card_number: payload.new.card_number || prev?.card_number || '',
+              cashback_balance: prev?.cashback_balance ?? payload.new.cashback_balance ?? 0,
+              chat_id: prev?.chat_id || null,
+            }));
+          }
+        })
+        .subscribe();
+
+      // telegram_users balans o'zgarishlarini tinglash (agar phone bo'lsa)
+      if (phone) {
+        const d = getDigits(phone);
+        tgCh = supabase.channel(`tg_rt_${d}`)
+          .on('postgres_changes', {
+            event: 'UPDATE', schema: 'public', table: 'telegram_users',
+            filter: `phone=eq.+${d}`,
+          }, (payload) => {
+            if (payload.new) {
+              setProfile(prev => prev ? {
+                ...prev,
+                cashback_balance: payload.new.cashback_balance ?? prev.cashback_balance,
+                card_number: payload.new.card_number || prev.card_number,
+                chat_id: payload.new.chat_id || prev.chat_id,
+              } : prev);
             }
-            saveCachedProfile(userId, updated.phone, updated);
-            return updated;
-          });
-        }
-      }).subscribe();
-      profileChannel = ch;
+          })
+          .subscribe();
+      }
     };
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (_event, session) => {
@@ -222,18 +194,25 @@ export const AuthProvider = ({ children }) => {
       setUser(u);
       if (u) {
         await loadProfile(u.id, u);
-        setupSub(u.id);
+        let phone = u.phone;
+        if (!phone && u.email) {
+          const d = u.email.split('@')[0].split('_')[0].replace(/\D/g, '');
+          if (d) phone = '+' + d;
+        }
+        setupSub(u.id, phone);
       } else {
         setProfile(null);
-        subscribedId = null;
-        if (profileChannel) { try { supabase.removeChannel(profileChannel); } catch {} profileChannel = null; }
+        subId = null;
+        if (profileCh) { try { supabase.removeChannel(profileCh); } catch {} profileCh = null; }
+        if (tgCh)      { try { supabase.removeChannel(tgCh);      } catch {} tgCh = null; }
       }
       setLoading(false);
     });
 
     return () => {
       subscription.unsubscribe();
-      if (profileChannel) { try { supabase.removeChannel(profileChannel); } catch {} }
+      if (profileCh) { try { supabase.removeChannel(profileCh); } catch {} }
+      if (tgCh)      { try { supabase.removeChannel(tgCh);      } catch {} }
     };
   }, []);
 
@@ -242,24 +221,20 @@ export const AuthProvider = ({ children }) => {
     const cleanPhone = phone.trim();
     const cleanCode  = code.trim();
 
-    // OTP kodni tekshirish
+    // OTP tekshirish
     let otpData = null;
     try {
-      const res = await supabase
-        .from('otp_codes')
-        .select('*')
-        .eq('phone', cleanPhone)
-        .maybeSingle();
+      const res = await supabase.from('otp_codes').select('*').eq('phone', cleanPhone).maybeSingle();
       otpData = res.data;
     } catch {}
 
-    if (!otpData) return { error: 'Keshbek uchun kod yuborilmagan yoki topilmadi.' };
+    if (!otpData)                                  return { error: 'Keshbek uchun kod yuborilmagan yoki topilmadi.' };
     if (new Date(otpData.expires_at) < new Date()) return { error: 'Tasdiqlash kodining vaqti o\'tgan. Qayta kod yuboring.' };
-    if (otpData.code !== cleanCode) return { error: 'Kiritilgan tasdiqlash kodi noto\'g\'ri!' };
+    if (otpData.code !== cleanCode)                return { error: 'Kiritilgan tasdiqlash kodi noto\'g\'ri!' };
 
     try { await supabase.from('otp_codes').delete().eq('phone', cleanPhone); } catch {}
 
-    // Ism va familiyani ajratish
+    // Ism ajratish
     let firstName = '', lastName = '';
     if (typeof nameInput === 'object' && nameInput !== null) {
       firstName = (nameInput.firstName || nameInput.first_name || '').trim();
@@ -274,7 +249,7 @@ export const AuthProvider = ({ children }) => {
     }
     const fullName = [firstName, lastName].filter(Boolean).join(' ').trim();
 
-    // Supabase Auth orqali kirish yoki ro'yxatdan o'tish
+    // Supabase Auth
     const digits   = cleanPhone.replace('+', '');
     const email    = `${digits}@keshbak.uz`;
     const password = `OtpSecretPasswordFor_${digits}`;
@@ -310,53 +285,52 @@ export const AuthProvider = ({ children }) => {
           return { error: signUp.error?.message || 'Tizimga kirishda xatolik.' };
         }
       }
-    } catch (e) {
+    } catch {
       return { error: 'Internet ulanish xatosi. Qayta urinib ko\'ring.' };
     }
 
     if (!userId) return { error: 'Tizimga kirishda kutilmagan xatolik yuz berdi.' };
 
-    const cached  = getCachedProfile(userId, cleanPhone);
-    const stored  = getStoredName(cleanPhone);
-    const existingProfile = await fetchProfileFromDB('phone', cleanPhone)
-                         || await fetchProfileFromDB('phone', digits);
+    // Mavjud profilni olish
+    const existingProfile = await fetchProfile('id', userId)
+                         || await fetchProfile('phone', cleanPhone)
+                         || await fetchProfile('phone', digits);
+    const tgUser = await fetchTelegramUser(cleanPhone);
 
     const validName = (v) => v && v !== 'Mijoz' && v.trim() ? v.trim() : null;
-    const resolvedName  = validName(fullName)
-                       || validName(existingProfile?.name)
-                       || validName(cached?.name)
-                       || validName(stored.name)
-                       || 'Mijoz';
-    const resolvedFirst = firstName || cached?.first_name || stored.first || '';
-    const resolvedLast  = lastName  || cached?.last_name  || stored.last  || '';
-    const cardNumber    = resolveCard(existingProfile?.card_number, cached?.card_number, cleanPhone);
+    const resolvedName  = validName(fullName) || validName(existingProfile?.name) || validName(tgUser?.full_name) || 'Mijoz';
+    const resolvedFirst = firstName || existingProfile?.first_name || '';
+    const resolvedLast  = lastName  || existingProfile?.last_name  || '';
+    const cardNumber    = existingProfile?.card_number || tgUser?.card_number || generateCard();
 
-    if (resolvedName !== 'Mijoz') saveStoredName(cleanPhone, resolvedName, resolvedFirst, resolvedLast);
-
-    const newProfile = {
-      id:               userId,
-      name:             resolvedName,
-      first_name:       resolvedFirst,
-      last_name:        resolvedLast,
-      phone:            cleanPhone,
-      card_number:      cardNumber,
-      cashback_balance: existingProfile?.cashback_balance ?? cached?.cashback_balance ?? 0,
-      level:            existingProfile?.level || cached?.level || 'Standart',
+    // profiles ga yozish (ism, familiya, karta, telefon)
+    const updatePayload = {
+      name:        resolvedName,
+      first_name:  resolvedFirst || null,
+      last_name:   resolvedLast  || null,
+      card_number: cardNumber,
+      phone:       cleanPhone,
     };
 
-    saveCachedProfile(userId, cleanPhone, newProfile);
-
-    // Supabase ga xavfsiz yozish (xatolar yutiladi)
-    if (resolvedName !== 'Mijoz') {
-      safePatch('id', userId, { name: resolvedName, card_number: cardNumber });
-      safePatch('phone', cleanPhone, { name: resolvedName, card_number: cardNumber });
+    const ok = await patchProfile('id', userId, updatePayload);
+    if (!ok) {
+      await patchProfile('phone', cleanPhone, updatePayload);
+      await patchProfile('phone', digits, updatePayload);
     }
+
+    // telegram_users ni ham yangilash (kartani va ismni admin panel ko'rishi uchun)
+    try {
+      await supabase
+        .from('telegram_users')
+        .update({ card_number: cardNumber, full_name: resolvedName })
+        .eq('phone', cleanPhone);
+    } catch {}
 
     await loadProfile(userId, { email, phone: cleanPhone });
     return { success: true };
   };
 
-  // ── Profil ismini yangilash ────────────────────────────────────────────
+  // ── Profil ismini yangilash (profiles jadvaliga) ───────────────────────
   const updateProfileName = async (firstNameVal, lastNameVal = '') => {
     if (!user && !profile) return { error: 'Tizimga kirmagansiz' };
 
@@ -383,43 +357,39 @@ export const AuthProvider = ({ children }) => {
       if (d) cleanPhone = '+' + d;
     }
 
-    const cached     = getCachedProfile(targetId, cleanPhone);
-    const cardNumber = resolveCard(profile?.card_number, cached?.card_number, cleanPhone);
-
-    const updatedProfile = {
-      ...(profile || {}),
-      id:               targetId,
-      name:             fullName,
-      first_name:       cleanFirst || '',
-      last_name:        cleanLast  || '',
-      card_number:      cardNumber,
-      phone:            cleanPhone || profile?.phone || '',
-      cashback_balance: profile?.cashback_balance ?? 0,
-      level:            profile?.level || 'Standart',
+    const payload = {
+      name:       fullName,
+      first_name: cleanFirst || null,
+      last_name:  cleanLast  || null,
     };
 
-    // 1. UI ni darhol yangilash
-    setProfile(updatedProfile);
+    // UI ni darhol yangilash
+    setProfile(prev => ({ ...(prev || {}), name: fullName, first_name: cleanFirst, last_name: cleanLast }));
 
-    // 2. localStorage ga saqlash
-    saveCachedProfile(targetId, cleanPhone, updatedProfile);
-    saveStoredName(cleanPhone, fullName, cleanFirst, cleanLast);
-
-    // 3. Supabase ga xavfsiz yozish (xatolar yutiladi)
-    safePatch('id', targetId, { name: fullName, card_number: cardNumber });
-    if (cleanPhone) {
+    // Supabase ga saqlash (profiles)
+    const ok = await patchProfile('id', targetId, payload);
+    if (!ok && cleanPhone) {
       const d = getDigits(cleanPhone);
-      safePatch('phone', '+' + d, { name: fullName, card_number: cardNumber });
-      safePatch('phone', d,       { name: fullName, card_number: cardNumber });
+      await patchProfile('phone', '+' + d, payload);
+      await patchProfile('phone', d, payload);
+    }
+
+    // telegram_users ga saqlash
+    if (cleanPhone) {
+      try {
+        await supabase
+          .from('telegram_users')
+          .update({ full_name: fullName })
+          .eq('phone', cleanPhone);
+      } catch {}
     }
 
     return { success: true };
   };
 
-  // ── Chiqish – keshni SAQLAYMIZ, faqat auth sessionni tugatamiz ─────────
+  // ── Chiqish ────────────────────────────────────────────────────────────
   const signOut = async () => {
     try { await supabase.auth.signOut(); } catch {}
-    // localStorage profil keshi O'CHIRILMAYDI – qayta kirganida ism so'ralmasin
   };
 
   // ── Balansni yangilash ─────────────────────────────────────────────────

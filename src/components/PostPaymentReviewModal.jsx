@@ -87,20 +87,21 @@ const PostPaymentReviewModal = ({ isOpen, onClose }) => {
       created_at: new Date().toISOString(),
     };
 
-    // 1. Supabase station_reviews jadvaliga saqlash
+    // 1. Supabase station_reviews jadvaliga saqlash (user_id UUID tipida)
     // Jadval mavjud bo'lmasa xato consola chiqmaydi – jim o'tiladi
-    try {
-      await supabase
-        .from('station_reviews')
-        .insert([{
-          user_id: user?.id || 'guest',
-          user_name: profile?.name || 'Mijoz',
-          rating: rating,
-          comment: comment.trim(),
-          created_at: new Date().toISOString(),
-        }]);
-    } catch {
-      // station_reviews jadvali yo'q – localStorage ga saqlanadi
+    if (user?.id) {
+      try {
+        await supabase
+          .from('station_reviews')
+          .insert([{
+            user_id: user.id,
+            user_name: profile?.name || 'Mijoz',
+            rating: rating,
+            comment: comment.trim(),
+          }]);
+      } catch {
+        // station_reviews jadvali yo'q – jim o'tiladi
+      }
     }
 
     // 2. Local storage-ga saqlash va haftalik cheklov taymerini o'rnatish

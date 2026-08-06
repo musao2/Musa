@@ -23,6 +23,7 @@ import { FaCrown, FaTrophy, FaMedal, FaShieldHalved } from 'react-icons/fa6';
 import { useAuth } from '../context/AuthContext';
 import { useTransactions } from '../hooks/useTransactions';
 import { useStationSettings } from '../hooks/useStationSettings';
+import { useNotifications } from '../hooks/useNotifications';
 import { supabase } from '../lib/supabase';
 
 const formatSum = (n) => Number(n || 0).toLocaleString('uz-UZ') + " so'm";
@@ -31,6 +32,8 @@ const ProfilePage = () => {
   const { profile, signOut, user, updateProfileName } = useAuth();
   const { transactions } = useTransactions(user?.id);
   const { station } = useStationSettings();
+  const userPhone = profile?.phone || user?.phone || '';
+  const { notifications, unreadCount, loading: notifsLoading, markAsRead, markAllAsRead, fetchNotifications } = useNotifications(userPhone);
   const [copied, setCopied] = useState(false);
 
   // Ismni va familiyani tahrirlash state'lari
@@ -359,12 +362,17 @@ const ProfilePage = () => {
             onClick={() => setActiveModal('notifications')}
             className="w-full flex items-center gap-3 px-4 py-4 text-left active:bg-gray-50 border-b border-gray-100"
           >
-            <div className="w-9 h-9 bg-[#f0f7f4] rounded-xl flex items-center justify-center text-[#0f7b4c] border border-emerald-100">
+            <div className="relative w-9 h-9 bg-[#f0f7f4] rounded-xl flex items-center justify-center text-[#0f7b4c] border border-emerald-100">
               <HiBell size={20} />
+              {unreadCount > 0 && (
+                <div className="absolute -top-1.5 -right-1.5 min-w-[18px] h-[18px] px-1 bg-red-500 rounded-full border-2 border-white flex items-center justify-center text-[9px] font-bold text-white leading-none">
+                  {unreadCount > 99 ? '99+' : unreadCount}
+                </div>
+              )}
             </div>
             <div className="flex-1">
               <p className="font-bold text-[14px] text-[#1a1a1a]">Bildirishnomalar</p>
-              <p className="text-gray-400 text-[12px]">Push va SMS sozlamalari</p>
+              <p className="text-gray-400 text-[12px]">{unreadCount > 0 ? `${unreadCount} ta yangi xabar` : 'Barcha xabarlar tarixi'}</p>
             </div>
             <HiChevronRight size={17} className="text-gray-300" />
           </button>
@@ -444,53 +452,148 @@ const ProfilePage = () => {
 
       {/* BILDIRISHNOMALAR MODALI */}
       {activeModal === 'notifications' && (
-        <div className="fixed inset-0 z-[100] bg-black/65 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-white rounded-3xl w-full max-w-sm p-6 shadow-2xl relative">
-            <button
-              onClick={() => setActiveModal(null)}
-              className="absolute right-4 top-4 text-gray-400 hover:text-gray-600"
-            >
-              <HiXMark size={24} />
-            </button>
-            <h3 className="text-[17px] font-bold text-[#1a1a1a] mb-5 flex items-center gap-2">
-              <HiBell className="text-[#0f7b4c]" size={20} />
-              Bildirishnomalar
-            </h3>
+        <div className="fixed inset-0 z-[100] bg-black/65 backdrop-blur-sm flex flex-col justify-end p-0">
+          <div className="bg-white rounded-t-3xl w-full h-[85vh] shadow-2xl relative flex flex-col">
 
-            <div className="flex flex-col gap-4">
-
-              {/* Push Notifications Toggle */}
-              <div className="flex items-center justify-between border-b border-gray-100 pb-4">
-                <div>
-                  <p className="font-bold text-[14px] text-[#1a1a1a]">Push bildirishnomalar</p>
-                  <p className="text-gray-400 text-[12px]">Keshbek kelganda bildirishnoma</p>
+            {/* Header */}
+            <div className="p-5 pb-3 flex items-center justify-between border-b border-gray-100 shrink-0">
+              <div className="flex items-center gap-2">
+                <div className="w-9 h-9 bg-[#f0f7f4] rounded-xl flex items-center justify-center">
+                  <HiBell className="text-[#0f7b4c]" size={20} />
                 </div>
+                <div>
+                  <h3 className="text-[17px] font-bold text-[#1a1a1a] leading-tight">Bildirishnomalar</h3>
+                  {unreadCount > 0 && (
+                    <p className="text-[11px] text-[#0f7b4c] font-semibold">{unreadCount} ta o'qilmagan</p>
+                  )}
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                {unreadCount > 0 && (
+                  <button
+                    onClick={markAllAsRead}
+                    className="text-[12px] text-[#0f7b4c] font-semibold bg-emerald-50 border border-emerald-100 px-3 py-1.5 rounded-xl active:scale-95 transition-all"
+                  >
+                    Barchasini o'qi
+                  </button>
+                )}
                 <button
-                  onClick={togglePush}
-                  className={`w-12 h-6.5 rounded-full p-0.5 transition-colors duration-200 ${pushEnabled ? 'bg-[#0f7b4c]' : 'bg-gray-300'
-                    }`}
+                  onClick={() => setActiveModal(null)}
+                  className="w-8 h-8 flex items-center justify-center bg-gray-100 rounded-full text-gray-500 active:bg-gray-200"
                 >
-                  <div className={`w-5.5 h-5.5 rounded-full bg-[#ffffff] shadow-md transform transition-transform duration-200 ${pushEnabled ? 'translate-x-5.5' : 'translate-x-0'
-                    }`} />
+                  <HiXMark size={20} />
                 </button>
               </div>
+            </div>
 
-              {/* SMS Notifications Toggle */}
-              <div className="flex items-center justify-between pb-2">
-                <div>
-                  <p className="font-bold text-[14px] text-[#1a1a1a]">SMS xabarnomalar</p>
-                  <p className="text-gray-400 text-[12px]">SMS orqali bildirishnoma yuborish</p>
+            {/* Kontent */}
+            <div className="flex-1 overflow-y-auto pb-10">
+              {notifsLoading ? (
+                /* Yuklanmoqda holati */
+                <div className="flex flex-col gap-3 p-5">
+                  {[1, 2, 3].map((i) => (
+                    <div key={i} className="p-4 rounded-2xl border border-gray-100 animate-pulse">
+                      <div className="h-4 bg-gray-100 rounded-full w-3/4 mb-3" />
+                      <div className="h-3 bg-gray-100 rounded-full w-full mb-1.5" />
+                      <div className="h-3 bg-gray-100 rounded-full w-2/3" />
+                    </div>
+                  ))}
                 </div>
-                <button
-                  onClick={toggleSms}
-                  className={`w-12 h-6.5 rounded-full p-0.5 transition-colors duration-200 ${smsEnabled ? 'bg-[#0f7b4c]' : 'bg-gray-300'
-                    }`}
-                >
-                  <div className={`w-5.5 h-5.5 rounded-full bg-[#ffffff] shadow-md transform transition-transform duration-200 ${smsEnabled ? 'translate-x-5.5' : 'translate-x-0'
-                    }`} />
-                </button>
-              </div>
+              ) : notifications.length === 0 ? (
+                /* Bo'sh holat */
+                <div className="flex flex-col items-center justify-center h-full text-gray-400 gap-4 py-16">
+                  <div className="w-20 h-20 bg-gray-50 rounded-full flex items-center justify-center">
+                    <HiBell size={36} className="text-gray-200" />
+                  </div>
+                  <div className="text-center">
+                    <p className="font-bold text-[15px] text-gray-500">Hozircha xabarlar yo'q</p>
+                    <p className="text-[13px] text-gray-400 mt-1">Admin xabar yuborganda bu yerda ko'rinadi</p>
+                  </div>
+                  <button
+                    onClick={fetchNotifications}
+                    className="text-[13px] text-[#0f7b4c] font-semibold bg-emerald-50 px-4 py-2 rounded-xl border border-emerald-100"
+                  >
+                    Yangilash
+                  </button>
+                </div>
+              ) : (
+                /* Xabarlar ro'yxati */
+                <div className="flex flex-col gap-2 p-4">
+                  {notifications.map((notif) => {
+                    const isTransfer = notif.category === 'TRANSFER';
+                    return (
+                      <div
+                        key={notif.id}
+                        onClick={() => !notif.is_read && markAsRead(notif.id)}
+                        className={`p-4 rounded-2xl border transition-all active:scale-[0.98] cursor-pointer ${
+                          notif.is_read
+                            ? 'bg-white border-gray-100'
+                            : isTransfer
+                              ? 'bg-[#f0f7f4] border-[#0f7b4c]/30 shadow-sm'
+                              : 'bg-blue-50/50 border-blue-100 shadow-sm'
+                        }`}
+                      >
+                        {/* Header: ikonka + sarlavha + vaqt */}
+                        <div className="flex items-start justify-between gap-2 mb-1.5">
+                          <div className="flex items-center gap-2 flex-1 min-w-0">
+                            {/* O'qilmagan nuqta */}
+                            {!notif.is_read && (
+                              <span className={`w-2 h-2 rounded-full shrink-0 mt-0.5 ${isTransfer ? 'bg-[#0f7b4c]' : 'bg-blue-500'}`} />
+                            )}
+                            {/* Category badge */}
+                            <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-md shrink-0 ${
+                              isTransfer
+                                ? 'bg-emerald-100 text-[#0f7b4c]'
+                                : 'bg-blue-100 text-blue-600'
+                            }`}>
+                              {isTransfer ? '💰 Keshbek' : '📢 Xabar'}
+                            </span>
+                            <h4 className={`font-bold text-[13px] truncate ${
+                              notif.is_read ? 'text-gray-600' : 'text-[#1a1a1a]'
+                            }`}>
+                              {notif.title || 'Xabar'}
+                            </h4>
+                          </div>
+                          {/* Vaqt */}
+                          <span className="text-[10px] text-gray-400 whitespace-nowrap shrink-0">
+                            {(() => {
+                              const d = new Date(notif.created_at);
+                              const now = new Date();
+                              const diffMs   = now - d;
+                              const diffMins = Math.floor(diffMs / 60000);
+                              const diffHrs  = Math.floor(diffMs / 3600000);
+                              const diffDays = Math.floor(diffMs / 86400000);
+                              if (diffMins < 1)  return 'Hozirgina';
+                              if (diffMins < 60) return `${diffMins} daq oldin`;
+                              if (diffHrs  < 24) return `${diffHrs} soat oldin`;
+                              if (diffDays === 1) return 'Kecha';
+                              if (diffDays < 7)  return `${diffDays} kun oldin`;
+                              return d.toLocaleDateString('uz-UZ');
+                            })()}
+                          </span>
+                        </div>
 
+                        {/* Xabar matni */}
+                        <p className={`text-[12px] leading-relaxed ml-4 ${
+                          notif.is_read ? 'text-gray-400' : 'text-gray-700'
+                        }`}>
+                          {notif.message}
+                        </p>
+
+                        {/* Keshbek miqdori */}
+                        {notif.amount > 0 && (
+                          <div className="mt-2.5 ml-4 inline-flex items-center gap-1.5 bg-white px-3 py-1.5 rounded-xl border border-emerald-100 shadow-sm">
+                            <span className="text-[#0f7b4c] text-[14px]">💰</span>
+                            <span className="text-[#0f7b4c] font-extrabold text-[13px]">
+                              +{Number(notif.amount).toLocaleString('uz-UZ')} so'm
+                            </span>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
             </div>
           </div>
         </div>
